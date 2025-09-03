@@ -1,0 +1,62 @@
+/* Themed dialog styling matching dark neon project theme */
+.themed-dialog {
+    -fx-background-color: linear-gradient(to bottom,#0c0c0c,#141e30,#243b55,#0f051d);
+    -fx-border-color: linear-gradient(to right,#00ffff88,#4ecdc488);
+    -fx-border-width: 1.2;
+    -fx-background-radius: 18;
+    -fx-border-radius: 18;
+    -fx-padding: 16 18 18 18;
+    -fx-font-family: 'SF Pro Text','JetBrains Mono','Consolas';
+    -fx-font-size: 13px;
+}
+.themed-dialog .header-panel .label { 
+    -fx-text-fill: #e0ffff; 
+    -fx-font-size: 15px; 
+    -fx-font-weight: 700; 
+    -fx-effect: dropshadow(gaussian,#00ffff55,8,0,0,0);
+}
+.themed-dialog .content.label { 
+    -fx-text-fill: #bfefff; 
+}
+.themed-dialog .text-field { 
+    -fx-background-color: rgba(0,255,255,0.08);
+    -fx-text-fill: #e0ffff;
+    -fx-prompt-text-fill: #88b7c7;
+    -fx-border-color: linear-gradient(to right,#00ffff77,#4ecdc477);
+    -fx-border-radius: 10; 
+    -fx-background-radius: 10; 
+    -fx-padding: 6 10; 
+}
+.themed-dialog .text-field:focused { 
+    -fx-border-color: linear-gradient(to right,#00ffff,#4ecdc4);
+    -fx-effect: dropshadow(gaussian,#00ffff55,10,0,0,0);
+}
+.themed-dialog .button-bar .container .button { 
+    -fx-background-radius: 10; 
+    -fx-font-weight: 700; 
+    -fx-font-family: 'SF Pro Text','JetBrains Mono';
+    -fx-letter-spacing: 0.8px;
+}
+.themed-dialog .button-bar .container .button:default-button { 
+    -fx-background-color: linear-gradient(to bottom,#006d7d,#0097a7); 
+    -fx-text-fill: #e0ffff; 
+    -fx-border-color: #00ffffAA; 
+    -fx-border-width: 1.2; 
+}
+.themed-dialog .button-bar .container .button:default-button:hover { 
+    -fx-background-color: linear-gradient(to bottom,#0097a7,#00bcd4); 
+}
+.themed-dialog .button-bar .container .button:hover { 
+    -fx-background-color: rgba(0,255,255,0.15);
+    -fx-text-fill: #ffffff;
+}
+.themed-dialog .button-bar .container .button:cancel-button { 
+    -fx-background-color: rgba(255,255,255,0.08); 
+    -fx-text-fill: #cccccc; 
+    -fx-border-color: #00ffff44; 
+}
+.themed-dialog .button-bar .container .button:cancel-button:hover { 
+    -fx-background-color: rgba(255,255,255,0.15); 
+}
+.themed-dialog .graphic-container { -fx-padding: 0 0 6 0; }
+.themed-dialog *.header-panel { -fx-background-color: transparent; }

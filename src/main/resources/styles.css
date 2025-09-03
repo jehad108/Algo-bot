@@ -1,0 +1,53 @@
+/* AlgoBot Styles */
+.root {
+    -fx-font-family: "Arial", "Segoe UI", sans-serif;
+}
+
+.button:hover {
+    -fx-cursor: hand;
+}
+
+.modern-button {
+    -fx-background-radius: 15;
+    -fx-border-radius: 15;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.3), 10, 0, 0, 5);
+    -fx-font-weight: bold;
+}
+
+.modern-button:hover {
+    -fx-scale-x: 1.05;
+    -fx-scale-y: 1.05;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.4), 15, 0, 0, 8);
+}
+
+.title-label {
+    -fx-font-size: 72px;
+    -fx-font-weight: bold;
+    -fx-text-fill: white;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3), 10, 0.3, 3, 3);
+}
+
+.subtitle-label {
+    -fx-font-size: 24px;
+    -fx-text-fill: #F0F0F0;
+}
+
+.section-title {
+    -fx-font-size: 48px;
+    -fx-font-weight: bold;
+    -fx-text-fill: white;
+}
+
+.algorithm-button {
+    -fx-background-color: rgba(255,255,255,0.2);
+    -fx-text-fill: white;
+    -fx-background-radius: 10;
+    -fx-border-color: white;
+    -fx-border-radius: 10;
+    -fx-border-width: 2;
+    -fx-font-weight: bold;
+}
+
+.algorithm-button:hover {
+    -fx-background-color: rgba(255,255,255,0.4);
+}

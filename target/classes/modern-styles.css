@@ -1,0 +1,237 @@
+/* =============================================================
+   Modern AlgoBot Unified Theme (Glass + Neon + Soft Depth)
+   - Font stack: Poppins / Montserrat for headings, Inter for body
+   - Clean reusable utility classes (replace inline styles)
+   ============================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Montserrat:wght@600;700;800&family=Poppins:wght@400;500;600;700;800&display=swap');
+
+.root {
+    -fx-font-family: 'Inter', 'Poppins', 'Montserrat', 'SF Pro Display', system-ui, sans-serif;
+    -fx-font-smoothing-type: lcd;
+}
+
+/* ---------- HEADINGS & TYPOGRAPHY ---------- */
+.hero-title {
+    -fx-font-family: 'Montserrat','Poppins','Inter',sans-serif;
+    -fx-font-size: 72px;
+    -fx-font-weight: 800;
+    -fx-text-fill: linear-gradient(to right, #ffffff, #d1d1ff, #a7e8ff);
+    -fx-letter-spacing: 3px;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.55), 18, 0, 0, 6);
+}
+
+.hero-subtitle {
+    -fx-font-family: 'Inter','Poppins',sans-serif;
+    -fx-font-size: 22px;
+    -fx-font-weight: 500;
+    -fx-text-fill: rgba(255,255,255,0.85);
+    -fx-letter-spacing: 4px;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.4), 10, 0, 0, 3);
+}
+
+.section-heading {
+    -fx-font-family: 'Montserrat','Poppins',sans-serif;
+    -fx-font-size: 44px;
+    -fx-font-weight: 700;
+    -fx-text-fill: #ffffff;
+    -fx-letter-spacing: 2px;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.55), 14, 0, 0, 4);
+}
+
+/* ---------- FEATURE CARDS (HOME) ---------- */
+.feature-card {
+    -fx-background-color: rgba(255,255,255,0.05);
+    -fx-background-radius: 28;
+    -fx-border-radius: 28;
+    -fx-border-color: rgba(255,255,255,0.12);
+    -fx-border-width: 1.5;
+    -fx-padding: 48 36 48 36;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.65), 40, 0.15, 0, 18);
+    -fx-transition: all 180ms ease-in-out; /* (not fully supported but harmless) */
+    -fx-cursor: hand;
+}
+
+.feature-card:hover {
+    -fx-background-color: rgba(255,255,255,0.10);
+    -fx-border-color: rgba(255,255,255,0.35);
+}
+
+.feature-card-title {
+    -fx-font-family: 'Poppins','Montserrat','Inter';
+    -fx-font-size: 30px;
+    -fx-font-weight: 700;
+    -fx-text-fill: #ffffff;
+    -fx-letter-spacing: 2px;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.5), 12, 0, 0, 3);
+}
+
+.feature-card-desc {
+    -fx-font-family: 'Inter','Poppins';
+    -fx-font-size: 16px;
+    -fx-font-weight: 500;
+    -fx-text-fill: rgba(255,255,255,0.78);
+    -fx-line-spacing: 5px;
+    -fx-text-alignment: center;
+}
+
+.accent-line {
+    -fx-background-radius: 4;
+    -fx-background-color: linear-gradient(to right, #ffffff, rgba(255,255,255,0.15));
+}
+
+/* ---------- ALGORITHM BUTTONS ---------- */
+.algo-button {
+    -fx-background-color: rgba(0,0,0,0.55);
+    -fx-background-radius: 20;
+    -fx-border-radius: 20;
+    -fx-border-width: 2;
+    -fx-font-family: 'Poppins','Inter';
+    -fx-font-weight: 600;
+    -fx-font-size: 15px;
+    -fx-text-fill: #ffffff;
+    -fx-letter-spacing: 1px;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.55), 16, 0, 0, 5);
+    -fx-padding: 14 28;
+}
+
+.algo-button:hover {
+    -fx-background-color: rgba(255,255,255,0.85);
+    -fx-text-fill: #0d0d14;
+    -fx-effect: dropshadow(gaussian, rgba(255,255,255,0.35), 22, 0.8, 0, 0);
+}
+
+.back-button {
+    -fx-background-color: rgba(255,255,255,0.20);
+    -fx-background-radius: 22;
+    -fx-border-radius: 22;
+    -fx-border-color: rgba(255,255,255,0.35);
+    -fx-border-width: 1.5;
+    -fx-font-family: 'Inter','Poppins';
+    -fx-font-size: 16px;
+    -fx-font-weight: 600;
+    -fx-text-fill: #ffffff;
+    -fx-letter-spacing: 1px;
+    -fx-padding: 12 26;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.4), 10, 0, 0, 3);
+}
+
+.back-button:hover {
+    -fx-background-color: rgba(255,255,255,0.40);
+    -fx-border-color: rgba(255,255,255,0.55);
+}
+
+/* ---------- UTILITY BADGE (optional future use) ---------- */
+.badge {
+    -fx-background-color: rgba(255,255,255,0.18);
+    -fx-background-radius: 14;
+    -fx-text-fill: rgba(255,255,255,0.9);
+    -fx-font-family: 'Inter','Poppins';
+    -fx-font-weight: 600;
+    -fx-font-size: 12px;
+    -fx-padding: 4 10;
+}
+
+/* Focus ring simulation */
+.algo-button:focused, .back-button:focused {
+    -fx-border-color: #ffffff;
+    -fx-border-width: 3;
+}
+
+/* Gradient text support fallback (if gradient not applied, white text remains) */
+.gradient-text {
+    -fx-text-fill: linear-gradient(to right, #ffffff, #a3e5ff, #e3c6ff);
+}
+
+/* ---------- HOME LAYOUT REWORK ---------- */
+.home-root {
+    -fx-spacing: 70;
+    -fx-alignment: center;
+}
+
+.home-columns {
+    -fx-spacing: 90;
+    -fx-alignment: center;
+}
+
+.hero-left {
+    -fx-alignment: top-left;
+    -fx-spacing: 26;
+    -fx-max-width: 520;
+}
+
+.hero-title-row {
+    -fx-alignment: center-left;
+    -fx-spacing: 14;
+}
+
+.hero-title-part {
+    -fx-font-family: 'Montserrat','Poppins';
+    -fx-font-size: 64px;
+    -fx-font-weight: 700;
+    -fx-text-fill: #ffffff;
+    -fx-letter-spacing: 2px;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.55), 16, 0, 0, 5);
+}
+
+.hero-title-accent {
+    -fx-font-family: 'Montserrat','Poppins';
+    -fx-font-size: 64px;
+    -fx-font-weight: 800;
+    -fx-text-fill: linear-gradient(to right, #6a5af9, #8f7bff, #00d4ff);
+    -fx-letter-spacing: 2px;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.65), 20, 0, 0, 6);
+}
+
+.hero-tagline {
+    -fx-font-family: 'Inter','Poppins';
+    -fx-font-size: 19px;
+    -fx-font-weight: 500;
+    -fx-text-fill: rgba(255,255,255,0.78);
+    -fx-line-spacing: 6px;
+    -fx-wrap-text: true;
+}
+
+.cta-row {
+    -fx-spacing: 22;
+    -fx-alignment: center-left;
+}
+
+.cta-button {
+    -fx-background-color: linear-gradient(to right, #6a5af9, #8f7bff, #00d4ff);
+    -fx-background-radius: 30;
+    -fx-padding: 16 40;
+    -fx-font-family: 'Poppins','Inter';
+    -fx-font-size: 16px;
+    -fx-font-weight: 600;
+    -fx-text-fill: #0d0d15;
+    -fx-letter-spacing: 1px;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.55), 18, 0, 0, 6);
+}
+
+.cta-button:hover {
+    -fx-scale-x: 1.04;
+    -fx-scale-y: 1.04;
+    -fx-effect: dropshadow(gaussian, rgba(106,90,249,0.85), 28, 0.6, 0, 0);
+}
+
+.support-text {
+    -fx-font-family: 'Inter';
+    -fx-font-size: 12px;
+    -fx-text-fill: rgba(255,255,255,0.4);
+    -fx-letter-spacing: 2px;
+}
+
+.card-stack {
+    -fx-spacing: 35;
+    -fx-alignment: center;
+}
+
+.cards-vbox {
+    -fx-spacing: 30;
+    -fx-alignment: center;
+}
+
