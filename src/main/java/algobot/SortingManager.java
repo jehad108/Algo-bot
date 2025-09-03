@@ -223,18 +223,24 @@ public class SortingManager {
             int idx = barIndexAt(e.getX());
             if(idx>=0) updateBarValueFromY(idx, e.getY());
             
-            if(paused) flag = true;
+            if(paused) {
+            	flag = true; 
+            	in_min = Math.min(in_min, idx);
+            }
         });
         sortingCanvas.setOnMouseDragged(e -> {
         	if((!barEditingEnabled || sortingRunning) && !paused) return;
             int idx = barIndexAt(e.getX());
             if(idx>=0) updateBarValueFromY(idx, e.getY());
             
-            if(paused) flag = true;
+            if(paused) {
+            	flag = true; 
+            	in_min = Math.min(in_min, idx);
+            }
         });
     }
 	
-	public void clearSortingState() {
+	private void clearSortingState() {
         if (sortingTimeline != null) sortingTimeline.stop();
         sortingValues.clear(); 
         
@@ -623,7 +629,10 @@ public class SortingManager {
     private void stepBubble() {
     	if(flag) {
     		passOrOuter = 0;
+    		si = Math.min(si, in_min);
+    		
     		flag = false;
+    		in_min = 100;
     	}
     	
     	passOrOuter = Math.max(passOrOuter, 0);
