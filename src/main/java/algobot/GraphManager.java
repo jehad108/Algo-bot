@@ -1181,10 +1181,10 @@ public class GraphManager {
 	    for(GraphNode gn: graphNodes.values()) ensureDijkstraLabel(gn);
 	    updateGraphExplanation("Dijkstra INIT: All distances set to ∞ except source.");
 	    
-	    final int BASE_STEP_MS = 600;          
-	    final int CHECK_EDGE_OFFSET = 150;  
-	    final int RELAX_OFFSET = 300;          
-	    final int SETTLE_OFFSET = 450;         
+	    final int BASE_STEP_MS = 1200;          // Increased from 600 for slower visualization
+	    final int CHECK_EDGE_OFFSET = 300;      // Increased from 150 for more clear edge checking
+	    final int RELAX_OFFSET = 600;           // Increased from 300 for better relaxation visualization  
+	    final int SETTLE_OFFSET = 900;          // Increased from 450 for clearer node settling         
         
         Map<String, Double> dist = new HashMap<>();
         Map<String, String> parent = new HashMap<>();
@@ -1202,12 +1202,12 @@ public class GraphManager {
         Timeline tl = new Timeline();
         int step = 0;
         
-        // Highlight starting node
+        // Highlight starting node with enhanced visibility
         Circle startCircle = start.getCircle();
         tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(step * BASE_STEP_MS)), e -> {
             startCircle.setFill(Color.web("#e74c3c")); // Red for start
             startCircle.setStroke(Color.web("#c0392b"));
-            startCircle.setStrokeWidth(4);
+            startCircle.setStrokeWidth(6); // Thicker stroke for source node
             common.sortingStatusLabel.setText("Dijkstra: Starting from node " + start.getId() + " (distance: 0)");
             Label lbl = dijkstraDistLabels.get(start.getId()); if(lbl!=null) lbl.setText("0");
             updateGraphExplanation("Source set: distance["+start.getId()+"] = 0");
@@ -1228,6 +1228,14 @@ public class GraphManager {
             
             // Highlight current node being processed
             tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(currentStep * BASE_STEP_MS)), e -> {
+                // Reset all edge colors to default first for better step-by-step visualization
+                for(EdgeRecord resetEdge : edges) {
+                    if(resetEdge.line != null) {
+                        resetEdge.line.setStroke(Color.web("#00ffff"));
+                        resetEdge.line.setStrokeWidth(1.0);
+                    }
+                }
+                
                 currentCircle.setFill(Color.web("#9b59b6")); // Purple for processing
                 currentCircle.setStroke(Color.web("#8e44ad"));
                 currentCircle.setStrokeWidth(4);
@@ -1259,21 +1267,25 @@ public class GraphManager {
                         final double finalNewDist = newDist;
                         final Line edge = er.line;
                         
-                        // Highlight edge being relaxed
+                        // Highlight edge being relaxed with better visibility
                         tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(currentStep * BASE_STEP_MS + CHECK_EDGE_OFFSET)), e -> {
                             edge.setStroke(Color.web("#f39c12")); // Orange for relaxation attempt
-                            edge.setStrokeWidth(4);
+                            edge.setStrokeWidth(5); // Increased width for better visibility
                             updateGraphExplanation("CHECK edge " + currentId + " → " + finalNeighborId + " (w=" + formatDist(weight) + ")");
                         }));
 
-                        // Update neighbor distance (successful relaxation)
+                        // Update neighbor distance (successful relaxation) with enhanced visual feedback
                         tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(currentStep * BASE_STEP_MS + RELAX_OFFSET)), e -> {
                             Circle nc = graphNodes.get(finalNeighborId).getCircle();
                             if(nc != null) {
                                 nc.setFill(Color.web("#3498db")); // Blue for updated
                                 nc.setStroke(Color.web("#2980b9"));
-                                nc.setStrokeWidth(3);
+                                nc.setStrokeWidth(4); // Increased for better visibility
                             }
+                            // Make the relaxed edge green to show successful relaxation
+                            edge.setStroke(Color.web("#27ae60")); // Green for successful relaxation
+                            edge.setStrokeWidth(4);
+                            
                             Label lbl = dijkstraDistLabels.get(finalNeighborId); if(lbl!=null) lbl.setText(formatDist(finalNewDist));
                             common.sortingStatusLabel.setText("Dijkstra: Updated distance to " + finalNeighborId + ": " + formatDist(finalNewDist));
                             updateGraphExplanation("RELAX: distance["+finalNeighborId+"] = " + formatDist(finalNewDist) + " via " + currentId);
@@ -1282,19 +1294,21 @@ public class GraphManager {
                         final String skipNeighbor = neighborId;
                         final double altDist = newDist;
                         final Line edge2 = er.line;
+                        // Show edge being checked but not relaxed with better visual feedback
                         tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(currentStep * BASE_STEP_MS + CHECK_EDGE_OFFSET)), e -> {
-                            edge2.setStroke(Color.web("#555555"));
-                            edge2.setStrokeWidth(2);
+                            edge2.setStroke(Color.web("#e74c3c")); // Red for no improvement
+                            edge2.setStrokeWidth(3); // Thicker for better visibility
                             updateGraphExplanation("NO IMPROVEMENT: edge " + currentId + " → " + skipNeighbor + " alt=" + formatDist(altDist) + " ≥ current " + formatDist(dist.get(skipNeighbor)));
                         }));
                     }
                 }
             }
             
-            // Mark current node as completed
+            // Mark current node as completed with enhanced visual feedback
             tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(currentStep * BASE_STEP_MS + SETTLE_OFFSET)), e -> {
                 currentCircle.setFill(Color.web("#27ae60")); // Green for completed
                 currentCircle.setStroke(Color.web("#229954"));
+                currentCircle.setStrokeWidth(5); // Thicker stroke for settled nodes
                 updateGraphExplanation("SETTLED: " + currentId + " final distance = " + formatDist(dist.get(currentId)));
             }));
             
@@ -1880,6 +1894,40 @@ public class GraphManager {
         box.setLayoutY(c.getCenterY() - r - 4);
     }
     
+    private boolean isGraphConnected() {
+        if (graphNodes.isEmpty()) return false;
+        if (graphNodes.size() == 1) return true;
+        
+        // Use DFS to check if all nodes are reachable from any starting node
+        String startNodeId = graphNodes.keySet().iterator().next();
+        Set<String> visited = new HashSet<>();
+        dfsConnectivityCheck(startNodeId, visited);
+        
+        // Graph is connected if we visited all nodes
+        return visited.size() == graphNodes.size();
+    }
+    
+    private void dfsConnectivityCheck(String nodeId, Set<String> visited) {
+        visited.add(nodeId);
+        
+        // Visit all neighbors through edges
+        for (EdgeRecord edge : edges) {
+            String neighborId = null;
+            
+            // For undirected graphs, check both directions
+            if (edge.a.equals(nodeId)) {
+                neighborId = edge.b;
+            } else if (edge.b.equals(nodeId)) {
+                neighborId = edge.a;
+            }
+            
+            // If we found an unvisited neighbor, recursively visit it
+            if (neighborId != null && !visited.contains(neighborId)) {
+                dfsConnectivityCheck(neighborId, visited);
+            }
+        }
+    }
+    
     private void visualizePrim(){ 
         if(isDirected) {
             showErrorInExplanation("PRIM'S ALGORITHM ERROR!");
@@ -1940,6 +1988,29 @@ public class GraphManager {
             showErrorInExplanation("   1. Add weighted edges between nodes");
             showErrorInExplanation("   2. Make sure graph is connected");
             showErrorInExplanation("   3. Then try running Prim's algorithm again");
+            return;
+        }
+        
+        // Check if graph is connected (required for MST algorithms)
+        if (!isGraphConnected()) {
+            showErrorInExplanation("PRIM'S ALGORITHM ERROR!");
+            showErrorInExplanation("This algorithm is NOT APPLICABLE - Graph is NOT CONNECTED!");
+            showErrorInExplanation("");
+            showErrorInExplanation("WHY THIS ERROR OCCURRED:");
+            showErrorInExplanation("   • Prim's algorithm requires a connected graph");
+            showErrorInExplanation("   • Some nodes are unreachable from other nodes");
+            showErrorInExplanation("   • Cannot create spanning tree without connectivity");
+            showErrorInExplanation("");
+            showErrorInExplanation("CONNECTIVITY REQUIREMENT:");
+            showErrorInExplanation("   • Every node must be reachable from every other node");
+            showErrorInExplanation("   • Graph must have no isolated components");
+            showErrorInExplanation("   • All nodes should be in one connected component");
+            showErrorInExplanation("");
+            showErrorInExplanation("HOW TO FIX:");
+            showErrorInExplanation("   1. Add edges to connect all isolated nodes");
+            showErrorInExplanation("   2. Ensure every node has a path to every other node");
+            showErrorInExplanation("   3. Remove any isolated components");
+            showErrorInExplanation("   4. Then try running Prim's algorithm again");
             return;
         }
         
@@ -2206,17 +2277,40 @@ public class GraphManager {
         }
         
         if (edges.isEmpty()) {
-            showErrorInExplanation("🚨 KRUSKAL'S ALGORITHM ERROR!");
-            showErrorInExplanation("❌ This algorithm is NOT APPLICABLE - No edges found!");
+            showErrorInExplanation("KRUSKAL'S ALGORITHM ERROR!");
+            showErrorInExplanation("This algorithm is NOT APPLICABLE - No edges found!");
             showErrorInExplanation("");
-            showErrorInExplanation("📋 WHY THIS ERROR OCCURRED:");
+            showErrorInExplanation("WHY THIS ERROR OCCURRED:");
             showErrorInExplanation("   • Kruskal's algorithm needs edges to create spanning tree");
             showErrorInExplanation("   • Cannot connect nodes without edges");
             showErrorInExplanation("");
-            showErrorInExplanation("🔧 HOW TO FIX:");
+            showErrorInExplanation("HOW TO FIX:");
             showErrorInExplanation("   1. Add weighted edges between nodes");
             showErrorInExplanation("   2. Make sure graph is connected");
             showErrorInExplanation("   3. Then try running Kruskal's algorithm again");
+            return;
+        }
+        
+        // Check if graph is connected (required for MST algorithms)
+        if (!isGraphConnected()) {
+            showErrorInExplanation("KRUSKAL'S ALGORITHM ERROR!");
+            showErrorInExplanation("This algorithm is NOT APPLICABLE - Graph is NOT CONNECTED!");
+            showErrorInExplanation("");
+            showErrorInExplanation("WHY THIS ERROR OCCURRED:");
+            showErrorInExplanation("   • Kruskal's algorithm requires a connected graph");
+            showErrorInExplanation("   • Some nodes are unreachable from other nodes");
+            showErrorInExplanation("   • Cannot create spanning tree without connectivity");
+            showErrorInExplanation("");
+            showErrorInExplanation("CONNECTIVITY REQUIREMENT:");
+            showErrorInExplanation("   • Every node must be reachable from every other node");
+            showErrorInExplanation("   • Graph must have no isolated components");
+            showErrorInExplanation("   • All nodes should be in one connected component");
+            showErrorInExplanation("");
+            showErrorInExplanation("HOW TO FIX:");
+            showErrorInExplanation("   1. Add edges to connect all isolated nodes");
+            showErrorInExplanation("   2. Ensure every node has a path to every other node");
+            showErrorInExplanation("   3. Remove any isolated components");
+            showErrorInExplanation("   4. Then try running Kruskal's algorithm again");
             return;
         }
         
