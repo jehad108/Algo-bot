@@ -807,3 +807,554 @@ public class DataStructureManager {
     private Integer parseIndex(){ try { return Integer.parseInt(dsIndexField.getText().trim()); } catch(Exception ex){ return null; } }
     private Integer parseRight(){ try { return Integer.parseInt(dsRightField.getText().trim()); } catch(Exception ex){ return null; } }
     
+    // Interactive extraction of arbitrary value: prompt user for value, locate it, replace with last, shrink, then heapify (down then up).
+    private void extractValueInteractive(){
+        if (heapAnimating) { updateDSExplanation("Wait for current animation to finish."); return; }
+        if (heapData.isEmpty()) { updateDSExplanation("Heap empty."); return; }
+        showInlineHeapExtractInput();
+    }
+    
+    private void showInlineHeapExtractInput(){
+        // Remove any existing overlay
+        if(currentHeapExtractOverlay!=null && currentHeapExtractOverlay.getParent()!=null) {
+            ((Pane)currentHeapExtractOverlay.getParent()).getChildren().remove(currentHeapExtractOverlay);
+        }
+        if(outsideHeapExtractClickHandler!=null){
+            dsCanvas.getScene().removeEventFilter(MouseEvent.MOUSE_PRESSED, outsideHeapExtractClickHandler);
+            outsideHeapExtractClickHandler = null;
+        }
+        // Place overlay roughly at top center of dsCanvas area
+        double canvasW = dsCanvas.getWidth();
+        double canvasH = dsCanvas.getHeight();
+	    // Compact, small inline prompt specifically for heap extract
+	    double ox = Math.max(12, canvasW/2 - 60);
+	    double oy = Math.max(12, canvasH*0.10 - 12);
+	    HBox box = new HBox(4);
+	    box.setAlignment(Pos.CENTER_LEFT);
+	    box.setPadding(new Insets(2,6,2,6));
+	    box.setStyle("-fx-background-color: rgba(5,18,28,0.92); -fx-background-radius:8; -fx-border-radius:8; -fx-border-color:#00ffff88; -fx-border-width:1; -fx-effect: dropshadow(gaussian, rgba(0,255,255,0.18),6,0,0,0);");
+	    Label lbl = new Label("Value:");
+	    lbl.setStyle("-fx-text-fill:#66d9ff;-fx-font-size:10px;-fx-font-weight:600;");
+	    TextField tf = new TextField();
+	    tf.setPromptText("x");
+	    tf.setPrefColumnCount(2);
+	    tf.setPrefWidth(34);
+	    tf.setMaxWidth(36);
+	    tf.setMinHeight(16);
+	    tf.setPrefHeight(16);
+	    tf.setStyle("-fx-background-color: rgba(255,255,255,0.07); -fx-text-fill:#e8faff; -fx-font-size:9px; -fx-font-weight:600; -fx-background-radius:6; -fx-border-radius:6; -fx-border-color:#00ffff55; -fx-border-width:1; -fx-padding:0 2;");
+	    Button ok = new Button("\u2713"); // ✓
+	    ok.setMinHeight(16);
+	    ok.setPrefHeight(16);
+	    ok.setMinWidth(18);
+	    ok.setPrefWidth(18);
+	    ok.setStyle("-fx-background-color:#00b4d8;-fx-text-fill:white;-fx-font-weight:700;-fx-background-radius:6;-fx-padding:0 0; -fx-font-size:9px;");
+	    Button cancel = new Button("\u2715"); // ✕
+	    cancel.setMinHeight(16);
+	    cancel.setPrefHeight(16);
+	    cancel.setMinWidth(18);
+	    cancel.setPrefWidth(18);
+	    cancel.setStyle("-fx-background-color:#374151;-fx-text-fill:#eeeeee;-fx-font-weight:700;-fx-background-radius:6;-fx-padding:0 0; -fx-font-size:9px;");
+	    box.getChildren().addAll(lbl, tf, ok, cancel);
+        box.setLayoutX(ox);
+        box.setLayoutY(oy);
+        // Keep the whole overlay small
+	    box.setMinHeight(18);
+	    box.setPrefHeight(18);
+	    box.setMaxWidth(140);
+	    currentHeapExtractOverlay = box;
+        // Attach to same parent as dsCanvas (its parent is StackPane inside leftBox)
+        if(dsCanvas.getParent() instanceof Pane p){
+            p.getChildren().add(box);
+        } else if(dsCanvas.getParent() instanceof StackPane sp){
+            sp.getChildren().add(box);
+        } else {
+            // fallback search up the chain
+            Node parent = dsCanvas.getParent();
+            while(parent!=null && !(parent instanceof Pane)) parent = parent.getParent();
+            if(parent instanceof Pane p2) p2.getChildren().add(box);
+        }
+        tf.requestFocus();
+
+        Runnable cleanup = () -> {
+            if(currentHeapExtractOverlay!=null && currentHeapExtractOverlay.getParent()!=null){
+                ((Pane)currentHeapExtractOverlay.getParent()).getChildren().remove(currentHeapExtractOverlay);
+            }
+            currentHeapExtractOverlay = null;
+            if(outsideHeapExtractClickHandler!=null){
+                dsCanvas.getScene().removeEventFilter(MouseEvent.MOUSE_PRESSED, outsideHeapExtractClickHandler);
+                outsideHeapExtractClickHandler = null;
+            }
+        };
+
+        Runnable commit = () -> {
+            int target;
+            try { target = Integer.parseInt(tf.getText().trim()); }
+            catch(Exception ex){ updateDSExplanation("Invalid number."); cleanup.run(); return; }
+            int idx=-1; for(int i=0;i<heapData.size();i++){ if(heapData.get(i)==target){ idx=i; break; } }
+            if(idx==-1){ updateDSExplanation("Value "+target+" not found in heap."); cleanup.run(); return; }
+            updateDSExplanation("Animating extraction of value "+target+" at index "+idx+".");
+            buildExtractAnimation(target, idx);
+            heapAnimating = true; disableHeapButtons(true); runHeapAnimTimeline();
+            cleanup.run();
+        };
+        Runnable cancelRun = () -> { cleanup.run(); };
+
+        ok.setOnAction(e-> commit.run());
+        cancel.setOnAction(e-> cancelRun.run());
+        tf.setOnAction(e-> commit.run());
+        tf.setOnKeyPressed(e-> { if(e.getCode()==KeyCode.ESCAPE) cancelRun.run(); });
+        tf.textProperty().addListener((o,ov,nv)-> {
+            try { Integer.parseInt(nv.trim()); ok.setDisable(false);} catch(Exception ex){ ok.setDisable(true);} });
+        ok.setDisable(true);
+
+        outsideHeapExtractClickHandler = evt -> {
+            if(currentHeapExtractOverlay!=null && !currentHeapExtractOverlay.localToScene(currentHeapExtractOverlay.getBoundsInLocal()).contains(evt.getSceneX(), evt.getSceneY())){
+                cancelRun.run();
+            }
+        };
+        dsCanvas.getScene().addEventFilter(MouseEvent.MOUSE_PRESSED, outsideHeapExtractClickHandler);
+    }
+    
+    private void buildExtractAnimation(int target, int idx){
+    	if (heapAnimating) { updateDSExplanation("Another heap animation in progress."); return; }
+        if (heapData.isEmpty()) return;
+        
+        heapAnimSteps.clear(); heapAnimIndex = 0; heapHighlightA=heapHighlightB=-1; currentHeapAction=null;
+        int n = heapData.size(); int lastIndex = n-1; int lastVal = heapData.get(lastIndex);
+        // Step 1: highlight target
+        heapAnimSteps.add(new HeapAnimStep(HeapAnimStep.Type.TARGET, idx,-1, "Select target value "+target+" at index "+idx+"."));
+        if (idx == lastIndex){
+            // simple removal
+            heapAnimSteps.add(new HeapAnimStep(HeapAnimStep.Type.REMOVE, lastIndex,-1, "Remove the only/last occurrence."));
+            heapAnimSteps.add(new HeapAnimStep(HeapAnimStep.Type.DONE,-1,-1, "Extraction complete."));
+            return;
+        }
+        // Step 2: swap with last
+        heapAnimSteps.add(new HeapAnimStep(HeapAnimStep.Type.SWAP, idx, lastIndex, "Swap target with last element "+lastVal+"."));
+        // Step 3: remove last (now holding target value)
+        heapAnimSteps.add(new HeapAnimStep(HeapAnimStep.Type.REMOVE, lastIndex,-1, "Remove former last (extracted value)."));
+        // After removal, we need to re-heapify from idx
+        // Build simulation list after swap+removal
+        List<Integer> sim = new ArrayList<>(heapData);
+        // simulate swap
+        Collections.swap(sim, idx, lastIndex);
+        sim.remove(lastIndex);
+        // Down-heap (siftDown) simulation
+        int cur = idx;
+        while(true){
+            int l=2*cur+1, r=2*cur+2; if(l>=sim.size()) break; int best=cur;
+            if(l<sim.size() && ((currentDSKind==DSKind.HEAP_MAX && sim.get(l)>sim.get(best)) || (currentDSKind==DSKind.HEAP_MIN && sim.get(l)<sim.get(best)))) best=l;
+            if(r<sim.size() && ((currentDSKind==DSKind.HEAP_MAX && sim.get(r)>sim.get(best)) || (currentDSKind==DSKind.HEAP_MIN && sim.get(r)<sim.get(best)))) best=r;
+            if(best!=cur){
+                heapAnimSteps.add(new HeapAnimStep(HeapAnimStep.Type.COMPARE, best, cur, "Compare child "+sim.get(best)+" with parent "+sim.get(cur)+" (down-heap)."));
+                heapAnimSteps.add(new HeapAnimStep(HeapAnimStep.Type.SWAP, best, cur, "Swap to restore heap (down-heap)."));
+                Collections.swap(sim, best, cur); cur=best; }
+            else break;
+        }
+        // Up-heap (siftUp) simulation if needed
+        while(cur>0){
+            int parent=(cur-1)/2; boolean violate = (currentDSKind==DSKind.HEAP_MAX)? sim.get(cur)>sim.get(parent): sim.get(cur)<sim.get(parent);
+            if(violate){
+                heapAnimSteps.add(new HeapAnimStep(HeapAnimStep.Type.COMPARE, cur, parent, "Compare with parent (up-heap)."));
+                heapAnimSteps.add(new HeapAnimStep(HeapAnimStep.Type.SWAP, cur, parent, "Swap upwards (up-heap)."));
+                Collections.swap(sim, cur, parent); cur=parent; }
+            else break;
+        }
+        heapAnimSteps.add(new HeapAnimStep(HeapAnimStep.Type.DONE,-1,-1, "Extraction complete. Heap property restored."));
+    }
+
+    private void disableHeapButtons(boolean disable){
+        // Rebuild buttons to ensure state; simplest approach
+        buildDSOperationButtons();
+        dsOperationButtonsBox.getChildren().forEach(n -> {
+            if (n instanceof Button btn) btn.setDisable(disable && !btn.getText().equals("RESET"));
+        });
+    }
+    
+    private void runHeapAnimTimeline(){
+        if (heapAnimTimeline != null) heapAnimTimeline.stop();
+        double interval = getAnimInterval();
+        heapAnimTimeline = new Timeline(new KeyFrame(Duration.millis(interval), e -> advanceHeapAnim()));
+        heapAnimTimeline.setCycleCount(Timeline.INDEFINITE);
+        heapAnimTimeline.play();
+    }
+    
+    private double getAnimInterval(){
+        if (dsSpeedSlider == null) return 1500; // ms
+        double v = dsSpeedSlider.getValue(); // range set in UI
+        return 1500 / v; // higher slider value -> faster
+    }
+    
+    private void advanceHeapAnim(){
+        if (heapAnimIndex >= heapAnimSteps.size()) { finishHeapAnim(); return; }
+        HeapAnimStep step = heapAnimSteps.get(heapAnimIndex++);
+        switch(step.type){
+            case INSERT_PLACE -> { heapHighlightA = step.a; heapHighlightB = -1; currentHeapAction = "insert"; }
+            case EXTRACT_START -> { heapHighlightA = step.a; heapHighlightB = -1; currentHeapAction = "extract"; }
+            case TARGET -> { heapHighlightA = step.a; heapHighlightB = -1; currentHeapAction = "target"; }
+            case REPLACE -> { heapHighlightA = step.a; heapHighlightB = step.b; currentHeapAction = "replace"; }
+            case COMPARE -> { heapHighlightA = step.a; heapHighlightB = step.b; currentHeapAction = "compare"; }
+            case SWAP -> { heapHighlightA = step.a; heapHighlightB = step.b; currentHeapAction = "swap"; Collections.swap(heapData, step.a, step.b); }
+            case REMOVE -> { currentHeapAction = "remove"; if(step.a>=0 && step.a<heapData.size()) { heapData.remove(step.a); heapHighlightA=-1; heapHighlightB=-1; } }
+            case DONE -> { heapHighlightA = heapHighlightB = -1; currentHeapAction = null; }
+        }
+        if(step.explanation!=null) updateDSExplanation(step.explanation);
+        redrawDS();
+        if (step.type == HeapAnimStep.Type.DONE) finishHeapAnim();
+    }
+    
+    private void finishHeapAnim(){
+        heapAnimating = false; heapHighlightA = heapHighlightB = -1; currentHeapAction = null;
+        if (heapAnimTimeline != null) heapAnimTimeline.stop();
+        disableHeapButtons(false);
+        redrawDS();
+    }
+    
+    private void restartHeapAnimSpeed(){
+        if (heapAnimating) runHeapAnimTimeline();
+    }
+    
+    private void startHeapInsertAnimation(int v) {
+        if (heapAnimating) {
+            updateDSExplanation("Heap insertion already in progress.");
+            return;
+        }
+        heapAnimSteps.clear();
+        heapAnimIndex = 0;
+        heapHighlightA = heapHighlightB = -1;
+        currentHeapAction = null;
+
+        // Place new value at end
+        heapData.add(v);
+        int idx = heapData.size() - 1;
+        heapAnimSteps.add(new HeapAnimStep(HeapAnimStep.Type.INSERT_PLACE, idx, -1, "Insert value " + v + " at bottom (index " + idx + ")."));
+
+        // Use simulation list for planning swaps without mutating real heap yet (so animation shows swaps live)
+        List<Integer> sim = new ArrayList<>(heapData);
+        int cur = idx;
+        while (cur > 0) {
+            int parent = (cur - 1) / 2;
+            int childVal = sim.get(cur);
+            int parentVal = sim.get(parent);
+            heapAnimSteps.add(new HeapAnimStep(HeapAnimStep.Type.COMPARE, cur, parent, (currentDSKind == DSKind.HEAP_MAX ? "Compare child " + childVal + " with parent " + parentVal + " (max)" : "Compare child " + childVal + " with parent " + parentVal + " (min)")));
+            boolean needSwap = (currentDSKind == DSKind.HEAP_MAX) ? childVal > parentVal : childVal < parentVal;
+            if (needSwap) {
+                heapAnimSteps.add(new HeapAnimStep(HeapAnimStep.Type.SWAP, cur, parent, "Swap " + childVal + " with parent " + parentVal + "."));
+                Collections.swap(sim, cur, parent); // only mutate simulation
+                cur = parent;
+            } else {
+                break;
+            }
+        }
+        heapAnimSteps.add(new HeapAnimStep(HeapAnimStep.Type.DONE, -1, -1, "Insertion complete. Heap property restored."));
+
+        heapAnimating = true;
+        disableHeapButtons(true);
+        runHeapAnimTimeline();
+    }
+    
+    private void avlInsertAnimated(int value) {
+        stopAVLAnimation();
+        avlSteps.clear();
+        avlStepIndex = 0;
+        
+        updateDSExplanation("Starting AVL insertion of " + value);
+        
+        // Perform insertion and collect steps
+        avlRoot = avlInsertWithSteps(avlRoot, value);
+        
+        // Start animation
+        startAVLAnimation();
+    }
+    
+    private void stopAVLAnimation() {
+        if (avlAnimationTimeline != null) {
+            avlAnimationTimeline.stop();
+            avlAnimationTimeline = null;
+        }
+        avlHighlightedNode = null;
+        avlRotationNodes.clear();
+    }
+    
+    private AVLNode avlInsertWithSteps(AVLNode node, int value) {
+        // Step 1: Normal BST insertion
+        if (node == null) {
+            AVLNode newNode = new AVLNode(value);
+            avlSteps.add("INSERTION: Creating new leaf node " + value);
+            avlSteps.add("Node " + value + " has been placed at this position");
+            return newNode;
+        }
+        avlSteps.add("SEARCHING: Currently at node " + node.value + ", inserting " + value);
+        if (value < node.value) {
+            avlSteps.add("Direction: " + value + " < " + node.value + " → go LEFT");
+            node.left = avlInsertWithSteps(node.left, value);
+        } else if (value > node.value) {
+            avlSteps.add("Direction: " + value + " > " + node.value + " → go RIGHT");
+            node.right = avlInsertWithSteps(node.right, value);
+        } else {
+            avlSteps.add("DUPLICATE: Value " + value + " already exists - insertion skipped");
+            return node; // Duplicate values not allowed
+        }
+        // Step 2: Update height and check balance
+        int oldHeight = node.height;
+        node.updateHeight();
+        avlSteps.add("HEIGHT UPDATE: Node " + node.value + " height: " + oldHeight + " → " + node.height);
+        // Step 3: Check balance and determine rotation case
+        int balance = node.getBalance();
+        avlSteps.add("BALANCE CHECK: Node " + node.value + " balance factor = " + balance);
+        
+        if (Math.abs(balance) <= 1) {
+            avlSteps.add("BALANCED: Node " + node.value + " is balanced (|" + balance + "| ≤ 1)");
+        } else {
+            avlSteps.add("IMBALANCE DETECTED: Node " + node.value + " needs rebalancing!");
+        }
+        
+        // Step 4: Perform rotations if needed
+        if (balance > 1) {
+            int leftBalance = node.left.getBalance();
+            avlSteps.add("CASE ANALYSIS: Left-heavy (balance = " + balance + ")");
+            avlSteps.add("Left child " + node.left.value + " balance = " + leftBalance);
+            if (leftBalance >= 0) {
+                avlSteps.add("ROTATION CASE: Left-Left → Single Right Rotation");
+                return rotateRightDetailed(node);
+            } else {
+                avlSteps.add("ROTATION CASE: Left-Right → Double Rotation (Left then Right)");
+                avlSteps.add("Phase 1: Left rotation on left subtree");
+                node.left = rotateLeftDetailed(node.left);
+                avlSteps.add("Phase 2: Right rotation on main node");
+                return rotateRightDetailed(node);
+            }
+        }
+        if (balance < -1) {
+            int rightBalance = node.right.getBalance();
+            avlSteps.add("CASE ANALYSIS: Right-heavy (balance = " + balance + ")");
+            avlSteps.add("Right child " + node.right.value + " balance = " + rightBalance);
+            if (rightBalance <= 0) {
+                avlSteps.add("ROTATION CASE: Right-Right → Single Left Rotation");
+                return rotateLeftDetailed(node);
+            } else {
+                avlSteps.add("ROTATION CASE: Right-Left → Double Rotation (Right then Left)");
+                avlSteps.add("Phase 1: Right rotation on right subtree");
+                node.right = rotateRightDetailed(node.right);
+                avlSteps.add("Phase 2: Left rotation on main node");
+                return rotateLeftDetailed(node);
+            }
+        }
+        avlSteps.add("COMPLETION: Node " + node.value + " processing complete");
+        return node;
+    }
+    
+    private void startAVLAnimation() {
+        if (avlSteps.isEmpty()) {
+            updateDSExplanation("Operation completed");
+            redrawDS();
+            return;
+        }
+        
+        avlAnimationTimeline = new Timeline(new KeyFrame(Duration.millis(500), e -> {
+            if (avlStepIndex < avlSteps.size()) {
+                updateDSExplanation(avlSteps.get(avlStepIndex));
+                
+                // Clear field after successful operation
+                if (avlStepIndex == 0) {
+                    dsValueField.clear();
+                }
+                
+                redrawDS();
+                avlStepIndex++;
+            } else {
+                stopAVLAnimation();
+                updateDSExplanation("AVL operation completed successfully");
+            }
+        }));
+        
+        avlAnimationTimeline.setCycleCount(Timeline.INDEFINITE);
+        avlAnimationTimeline.play();
+    }
+    
+    private AVLNode rotateRightDetailed(AVLNode y) {
+        AVLNode x = y.left;
+        AVLNode T2 = x.right;
+        
+        avlSteps.add("RIGHT ROTATION PROCESS:");
+        avlSteps.add("Before: " + y.value + " is root, " + x.value + " is left child");
+        avlSteps.add("Step 1: Save " + x.value + "'s right subtree" + (T2 != null ? " (" + T2.value + ")" : " (null)"));
+        avlSteps.add("Step 2: Make " + x.value + " the new root");
+        avlSteps.add("Step 3: " + y.value + " becomes right child of " + x.value);
+        if (T2 != null) {
+            avlSteps.add("Step 4: Attach saved subtree (" + T2.value + ") as left child of " + y.value);
+        }
+        
+        // Perform rotation
+        x.right = y;
+        y.left = T2;
+        
+        // Update heights
+        y.updateHeight();
+        x.updateHeight();
+        
+        avlSteps.add("RESULT: " + x.value + " is now the root of this subtree");
+        
+        return x;
+    }
+    
+    private AVLNode rotateLeftDetailed(AVLNode x) {
+        AVLNode y = x.right;
+        AVLNode T2 = y.left;
+        
+        avlSteps.add("LEFT ROTATION PROCESS:");
+        avlSteps.add("Before: " + x.value + " is root, " + y.value + " is right child");
+        avlSteps.add("Step 1: Save " + y.value + "'s left subtree" + (T2 != null ? " (" + T2.value + ")" : " (null)"));
+        avlSteps.add("Step 2: Make " + y.value + " the new root");
+        avlSteps.add("Step 3: " + x.value + " becomes left child of " + y.value);
+        if (T2 != null) {
+            avlSteps.add("Step 4: Attach saved subtree (" + T2.value + ") as right child of " + x.value);
+        }
+        
+        // Perform rotation
+        y.left = x;
+        x.right = T2;
+        
+        // Update heights
+        x.updateHeight();
+        y.updateHeight();
+        
+        avlSteps.add("RESULT: " + y.value + " is now the root of this subtree");
+        
+        return y;
+    }
+    
+    private void avlDeleteAnimated(int value) {
+        if (avlRoot == null) {
+            updateDSExplanation("Tree is empty, cannot delete " + value);
+            return;
+        }
+        
+        stopAVLAnimation();
+        avlSteps.clear();
+        avlStepIndex = 0;
+        
+        updateDSExplanation("Starting AVL deletion of " + value);
+        
+        // Perform deletion and collect steps
+        avlRoot = avlDeleteWithSteps(avlRoot, value);
+        
+        // Start animation
+        startAVLAnimation();
+    }
+    
+    private AVLNode avlDeleteWithSteps(AVLNode node, int value) {
+        // Step 1: Search for the node to delete
+        if (node == null) {
+            avlSteps.add("SEARCH FAILED: Value " + value + " not found in tree");
+            return null;
+        }
+        
+        avlSteps.add("SEARCHING: At node " + node.value + ", looking for " + value);
+        
+        if (value < node.value) {
+            avlSteps.add("DIRECTION: " + value + " < " + node.value + " → go left");
+            node.left = avlDeleteWithSteps(node.left, value);
+        } else if (value > node.value) {
+            avlSteps.add("DIRECTION: " + value + " > " + node.value + " → go right");
+            node.right = avlDeleteWithSteps(node.right, value);
+        } else {
+            // Node to delete found
+            avlSteps.add("TARGET FOUND: Node " + value + " located for deletion");
+            // Analyze deletion cases
+            avlSteps.add("CASE ANALYSIS: Checking children of node " + value);
+            
+            if (node.left == null && node.right == null) {
+                avlSteps.add("CASE 1: Leaf node (no children)");
+                avlSteps.add("ACTION: Direct removal of leaf node " + value);
+                return null;
+            } else if (node.left == null || node.right == null) {
+                AVLNode temp = (node.left != null) ? node.left : node.right;
+                avlSteps.add("CASE 2: Node has one child");
+                avlSteps.add("Child found: " + temp.value);
+                avlSteps.add("ACTION: Replace node " + value + " with child " + temp.value);
+                return temp;
+            } else {
+                // Node has two children - detailed successor replacement
+                avlSteps.add("CASE 3: Node has two children");
+                avlSteps.add("Left child: " + node.left.value + ", Right child: " + node.right.value);
+                avlSteps.add("SUCCESSOR SEARCH: Finding inorder successor in right subtree");
+                AVLNode successor = findMinWithSteps(node.right);
+                
+                avlSteps.add("REPLACEMENT: Copying successor value to target node");
+                int oldValue = node.value;
+                node.value = successor.value;
+                avlSteps.add("Node updated: " + oldValue + " → " + successor.value);
+                
+                avlSteps.add("CLEANUP: Deleting successor node " + successor.value + " from right subtree");
+                node.right = avlDeleteWithSteps(node.right, successor.value);
+            }
+        }
+        
+        // Step 2: Post-deletion rebalancing
+        avlSteps.add("REBALANCING: Updating height and checking balance for node " + node.value);
+        node.updateHeight();
+        
+        int balance = node.getBalance();
+        avlSteps.add("BALANCE CHECK: Node " + node.value + " balance factor = " + balance);
+        
+        if (Math.abs(balance) <= 1) {
+            avlSteps.add("BALANCED: Node " + node.value + " remains balanced");
+        } else {
+            avlSteps.add("REBALANCE NEEDED: Node " + node.value + " requires rotation");
+        }
+        
+        if (balance > 1) {
+            int leftBalance = node.left.getBalance();
+            avlSteps.add("CASE: Left-heavy (balance = " + balance + ")");
+            avlSteps.add("Left child " + node.left.value + " balance = " + leftBalance);
+            if (leftBalance >= 0) {
+                avlSteps.add("ROTATION: Left-Left case → Right rotation");
+                return rotateRightDetailed(node);
+            } else {
+                avlSteps.add("ROTATION: Left-Right case → Double rotation");
+                avlSteps.add("Phase 1: Left rotation on left subtree");
+                node.left = rotateLeftDetailed(node.left);
+                avlSteps.add("Phase 2: Right rotation on main node");
+                return rotateRightDetailed(node);
+            }
+        }
+        
+        if (balance < -1) {
+            int rightBalance = node.right.getBalance();
+            avlSteps.add("CASE: Right-heavy (balance = " + balance + ")");
+            avlSteps.add("Right child " + node.right.value + " balance = " + rightBalance);
+            if (rightBalance <= 0) {
+                avlSteps.add("ROTATION: Right-Right case → Left rotation");
+                return rotateLeftDetailed(node);
+            } else {
+                avlSteps.add("ROTATION: Right-Left case → Double rotation");
+                avlSteps.add("Phase 1: Right rotation on right subtree");
+                node.right = rotateRightDetailed(node.right);
+                avlSteps.add("Phase 2: Left rotation on main node");
+                return rotateLeftDetailed(node);
+            }
+        }
+        
+        avlSteps.add("COMPLETION: Node " + node.value + " deletion processing complete");
+        return node;
+    }
+    
+    private AVLNode findMinWithSteps(AVLNode node) {
+        avlSteps.add("SUCCESSOR SEARCH: Starting from right child " + node.value);
+        avlSteps.add("GOAL: Find leftmost node (smallest value in right subtree)");
+        
+        int stepCount = 1;
+        while (node.left != null) {
+            avlSteps.add("Step " + stepCount + ": Current node " + node.value + " has left child " + node.left.value);
+            avlSteps.add("Step " + stepCount + ": Moving left to " + node.left.value);
+            node = node.left;
+            stepCount++;
+        }
+        
+        avlSteps.add("SUCCESSOR LOCATED: Node " + node.value + " (no left child = smallest)");
+        avlSteps.add("VERIFICATION: " + node.value + " is the inorder successor");
+        return node;
+    }
+}
