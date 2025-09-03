@@ -27,6 +27,8 @@ public class GraphManager {
     // Workflow buttons for graph algorithms
     private Button selectSourceBtnRef;
     private Button runGraphAlgosBtnRef;
+    private Button resetVisualizationBtnRef;
+    private Button pauseBtnRef;
     
     private Map<String, GraphNode> graphNodes = new HashMap<>();
     private List<String> nodeOrder = new ArrayList<>();
@@ -45,6 +47,8 @@ public class GraphManager {
     private boolean isConfigurationComplete = false;
     private RadioButton directedRadio, undirectedRadio, weightedRadio, unweightedRadio;
     private double animationSpeed = 1.0; // Speed multiplier for algorithm animations
+    private Timeline currentVisualizationTimeline; // Track current running animation for stopping
+    private boolean isPaused = false; // Track pause state
     // Edge data
     private Map<String, Circle> nodeCircles = new HashMap<>();
     private Set<String> edgeKeys = new HashSet<>(); // undirected key: minId|maxId
@@ -66,8 +70,7 @@ public class GraphManager {
     private Map<Circle, GraphNode> circleToNode = new HashMap<>();
     // Distance labels for Dijkstra visualization (styled like edge weight boxes)
     private Map<String, Label> dijkstraDistLabels = new HashMap<>();
-    private Map<String, Label> primCostLabels = new HashMap<>();
-    private Map<String, Label> kruskalLabels = new HashMap<>();
+    private Map<String, Label> bellmanFordDistLabels = new HashMap<>();
     
     // Inline weight overlay state
     private Node currentWeightOverlay = null;
@@ -184,6 +187,18 @@ public class GraphManager {
 	    runGraphAlgosBtnRef.setOnAction(e -> runChosenGraphAlgorithms());
 	    thirdRow.getChildren().addAll(selectSourceBtnRef, runGraphAlgosBtnRef);
 	    buttonPanel.getChildren().add(thirdRow);
+	    
+	    // Fourth row: Reset Visualization and Pause buttons (compact)
+	    HBox fourthRow = new HBox(8); // reduced spacing
+	    fourthRow.setAlignment(Pos.CENTER_RIGHT);
+	    pauseBtnRef = ButtonManager.createCompactButton("PAUSE", "#ffaa00");
+	    pauseBtnRef.setDisable(true); // disabled until animation is running
+	    pauseBtnRef.setOnAction(e -> togglePauseVisualization());
+	    resetVisualizationBtnRef = ButtonManager.createCompactButton("RESET VISUALIZATION", "#ff6b35");
+	    resetVisualizationBtnRef.setDisable(true); // disabled until algorithms have been run
+	    resetVisualizationBtnRef.setOnAction(e -> resetVisualizationState());
+	    fourthRow.getChildren().addAll(pauseBtnRef, resetVisualizationBtnRef);
+	    buttonPanel.getChildren().add(fourthRow);
         
         // Add spacer and button panel to title container
         Region spacer = new Region();
@@ -442,6 +457,30 @@ public class GraphManager {
         }
     }
     
+    private void togglePauseVisualization() {
+        if (currentVisualizationTimeline == null) {
+            return; // No animation running
+        }
+        
+        if (isPaused) {
+            // Resume animation
+            currentVisualizationTimeline.play();
+            isPaused = false;
+            if (pauseBtnRef != null) {
+                pauseBtnRef.setText("PAUSE");
+                pauseBtnRef.setStyle("-fx-background-color: linear-gradient(45deg, #ffaa00, #ff8800); -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-border-radius: 8; -fx-padding: 8 16; -fx-font-size: 12px; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3),5,0,0,2);");
+            }
+        } else {
+            // Pause animation
+            currentVisualizationTimeline.pause();
+            isPaused = true;
+            if (pauseBtnRef != null) {
+                pauseBtnRef.setText("RESUME");
+                pauseBtnRef.setStyle("-fx-background-color: linear-gradient(45deg, #00ff88, #00cc66); -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-border-radius: 8; -fx-padding: 8 16; -fx-font-size: 12px; -fx-effect: dropshadow(gaussian, rgba(0,255,136,0.5),10,0.7,0,0);");
+            }
+        }
+    }
+    
     private void disarmAddNodeMode() {
         // Only return if the mode is already disarmed and the button is in the default state
         if (!addNodeArmed && addNodeButtonRef != null && "ADD NODE".equals(addNodeButtonRef.getText())) {
@@ -612,6 +651,7 @@ public class GraphManager {
         // Disable gating buttons until a new algorithm selection is made & source re-set
         if (selectSourceBtnRef != null) selectSourceBtnRef.setDisable(true);
         if (runGraphAlgosBtnRef != null) runGraphAlgosBtnRef.setDisable(true);
+        if (resetVisualizationBtnRef != null) resetVisualizationBtnRef.setDisable(true);
 
         // Re-enable configuration (directed/weighted choices etc.)
         resetGraphConfiguration();
@@ -688,6 +728,104 @@ public class GraphManager {
         graphAlgoChecks.values().forEach(cb -> cb.setDisable(false));
     }
     
+    private void resetVisualizationState() {
+        // Stop any running visualization timeline immediately
+        stopCurrentVisualization();
+        
+        // Clear all visualization colors and effects
+        resetNodeColors();
+        resetEdgeColors();
+        restoreEdgeWeightLabels(); // Restore hidden edge weight labels
+        clearVisualizationLabels();
+        
+        // Reset source selection
+        bfsSource = null;
+        
+        // Unlock algorithm selection to allow new choices
+        unlockAlgorithmSelection();
+        
+        // Unselect all algorithms
+        graphAlgoChecks.values().forEach(cb -> cb.setSelected(false));
+        
+        // Re-enable the Set Source button and disable Run button
+        if (selectSourceBtnRef != null) {
+            ButtonManager.setCompactButtonDisabled(selectSourceBtnRef);
+        }
+        if (runGraphAlgosBtnRef != null) {
+            runGraphAlgosBtnRef.setDisable(true);
+        }
+        
+        // Disable the Reset Visualization button until algorithms run again
+        if (resetVisualizationBtnRef != null) {
+            resetVisualizationBtnRef.setDisable(true);
+        }
+        
+        // Disable and reset the Pause button
+        if (pauseBtnRef != null) {
+            pauseBtnRef.setDisable(true);
+            pauseBtnRef.setText("PAUSE");
+            pauseBtnRef.setStyle("-fx-background-color: linear-gradient(45deg, #ffaa00, #ff8800); -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-border-radius: 8; -fx-padding: 8 16; -fx-font-size: 12px; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3),5,0,0,2);");
+        }
+        
+        // Re-enable structural editing buttons (ADD NODE, ADD EDGE if configuration is complete)
+        if (addNodeButtonRef != null) {
+            ButtonManager.setCompactButtonEnabled(addNodeButtonRef);
+        }
+        if (addEdgeButtonRef != null && isConfigurationComplete) {
+            ButtonManager.setCompactButtonEnabled(addEdgeButtonRef);
+        }
+        
+        // Clear explanation area
+        clearGraphExplanation();
+        
+        // Update status
+        common.sortingStatusLabel.setText("Select algorithms to visualize on this graph.");
+        
+        // Restore normal node click handlers
+        restoreNodeClickHandlers();
+        
+        // Update button states based on current selections
+        updateGraphAlgoButtons();
+    }
+    
+    private void stopCurrentVisualization() {
+        // Stop any currently running visualization timeline
+        if (currentVisualizationTimeline != null) {
+            currentVisualizationTimeline.stop();
+            currentVisualizationTimeline = null;
+        }
+        // Reset pause state and disable pause button
+        isPaused = false;
+        if (pauseBtnRef != null) {
+            pauseBtnRef.setDisable(true);
+            pauseBtnRef.setText("PAUSE");
+            pauseBtnRef.setStyle("-fx-background-color: linear-gradient(45deg, #ffaa00, #ff8800); -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-border-radius: 8; -fx-padding: 8 16; -fx-font-size: 12px; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3),5,0,0,2);");
+        }
+    }
+    
+    private void enablePauseButton() {
+        // Enable pause button when animation starts
+        isPaused = false;
+        if (pauseBtnRef != null) {
+            pauseBtnRef.setDisable(false);
+            pauseBtnRef.setText("PAUSE");
+            pauseBtnRef.setStyle("-fx-background-color: linear-gradient(45deg, #ffaa00, #ff8800); -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-border-radius: 8; -fx-padding: 8 16; -fx-font-size: 12px; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3),5,0,0,2);");
+        }
+        
+        // Set up completion handler for current timeline
+        if (currentVisualizationTimeline != null) {
+            currentVisualizationTimeline.setOnFinished(e -> {
+                isPaused = false;
+                if (pauseBtnRef != null) {
+                    pauseBtnRef.setDisable(true);
+                    pauseBtnRef.setText("PAUSE");
+                    pauseBtnRef.setStyle("-fx-background-color: linear-gradient(45deg, #ffaa00, #ff8800); -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-border-radius: 8; -fx-padding: 8 16; -fx-font-size: 12px; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3),5,0,0,2);");
+                }
+                currentVisualizationTimeline = null;  // Clear reference when animation completes
+            });
+        }
+    }
+    
     private void restoreNodeClickHandlers(){
         for (GraphNode gn: graphNodes.values()) {
             Circle c = gn.getCircle(); if(c!=null){
@@ -721,6 +859,16 @@ public class GraphManager {
         if (isSelected("Floyd-Warshall")) visualizeFloydWarshall();
         if (isSelected("Prim")) visualizePrim();
         if (isSelected("Kruskal")) visualizeKruskal();
+        
+        // Enable the Reset Visualization button after algorithms have been executed
+        if (resetVisualizationBtnRef != null) {
+            resetVisualizationBtnRef.setDisable(false);
+        }
+        
+        // Disable the Run button since algorithms are now running/completed
+        if (runGraphAlgosBtnRef != null) {
+            runGraphAlgosBtnRef.setDisable(true);
+        }
     }
     
     private boolean isSelected(String name){ 
@@ -741,7 +889,7 @@ public class GraphManager {
         
         // Highlight starting node
         Circle startCircle = start.getCircle();
-        tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(step * 800)), e -> {
+        tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(step * 600)), e -> {
             startCircle.setFill(Color.web("#e74c3c")); // Red for start
             startCircle.setStroke(Color.web("#c0392b"));
             startCircle.setStrokeWidth(4);
@@ -758,7 +906,7 @@ public class GraphManager {
             final int currentStep = step;
             
             // Highlight current node being processed
-            tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(currentStep * 800)), e -> {
+            tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(currentStep * 600)), e -> {
                 currentCircle.setFill(Color.web("#f39c12")); // Orange for processing
                 currentCircle.setStroke(Color.web("#e67e22"));
                 currentCircle.setStrokeWidth(4);
@@ -786,14 +934,14 @@ public class GraphManager {
                     final Line finalEdge = edge;
                     
                     // Highlight edge traversal
-                    tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(currentStep * 800 + 200)), e -> {
+                    tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(currentStep * 600 + 200)), e -> {
                         finalEdge.setStroke(Color.web("#3498db"));
                         finalEdge.setStrokeWidth(4);
                         updateGraphExplanation("BFS EDGE: Explore " + current.getId() + " → " + finalNeighbor.getId());
                     }));
                     
                     // Highlight discovered neighbor
-                    tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(currentStep * 800 + 400)), e -> {
+                    tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(currentStep * 600 + 400)), e -> {
                         Circle nc = finalNeighbor.getCircle();
                         if(nc != null) {
                             nc.setFill(Color.web("#3498db")); // Blue for discovered
@@ -806,7 +954,7 @@ public class GraphManager {
             }
             
             // Mark current node as completely processed
-            tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(currentStep * 800 + 600)), e -> {
+            tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(currentStep * 600 + 600)), e -> {
                 currentCircle.setFill(Color.web("#27ae60")); // Green for completed
                 currentCircle.setStroke(Color.web("#229954"));
                 updateGraphExplanation("BFS DONE: Finished " + current.getId());
@@ -816,11 +964,14 @@ public class GraphManager {
         }
         
         // Final completion message
-        tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(step * 800)), e -> {
+        tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(step * 600)), e -> {
         	common.sortingStatusLabel.setText("BFS: Traversal complete!");
             updateGraphExplanation("BFS COMPLETE");
         }));
         
+        // Store timeline for potential stopping and play
+        currentVisualizationTimeline = tl;
+        enablePauseButton();
         tl.play();
     }
     private void visualizeDFS(GraphNode start){
@@ -851,6 +1002,9 @@ public class GraphManager {
             updateGraphExplanation("DFS COMPLETE");
         }));
         
+        // Store timeline for potential stopping and play
+        currentVisualizationTimeline = tl;
+        enablePauseButton();
         tl.play();
     }
     
@@ -861,6 +1015,8 @@ public class GraphManager {
                 c.setFill(Color.web("#0097a7", 0.9));
                 c.setStroke(Color.web("#00ffff"));
                 c.setStrokeWidth(2.0);
+                // Clear any special effects (like the source node glow)
+                c.setEffect(null);
             }
         }
         for (EdgeRecord edge : edges) {
@@ -1025,10 +1181,10 @@ public class GraphManager {
 	    for(GraphNode gn: graphNodes.values()) ensureDijkstraLabel(gn);
 	    updateGraphExplanation("Dijkstra INIT: All distances set to ∞ except source.");
 	    
-	    final int BASE_STEP_MS = 1600;          
-	    final int CHECK_EDGE_OFFSET = 400;  
-	    final int RELAX_OFFSET = 780;          
-	    final int SETTLE_OFFSET = 1150;         
+	    final int BASE_STEP_MS = 600;          
+	    final int CHECK_EDGE_OFFSET = 150;  
+	    final int RELAX_OFFSET = 300;          
+	    final int SETTLE_OFFSET = 450;         
         
         Map<String, Double> dist = new HashMap<>();
         Map<String, String> parent = new HashMap<>();
@@ -1151,6 +1307,9 @@ public class GraphManager {
 	            updateGraphExplanation("DIJKSTRA COMPLETE");
 	    }));
         
+        // Store timeline for potential stopping and play
+        currentVisualizationTimeline = tl;
+        enablePauseButton();
         tl.play();
     }
     
@@ -1207,6 +1366,42 @@ public class GraphManager {
         lastGraphExplanation = "";
     }
     
+    private void resetEdgeColors() {
+        for (EdgeRecord edge : edges) {
+            if (edge.line != null) {
+                edge.line.setStroke(Color.web("#00ffff"));
+                edge.line.setStrokeWidth(1.0);
+            }
+        }
+    }
+    
+    private void restoreEdgeWeightLabels() {
+        // Restore visibility of all edge weight labels that may have been hidden during MST algorithms
+        for (EdgeRecord edge : edges) {
+            if (edge.weightLabel != null) {
+                edge.weightLabel.setVisible(true);
+            }
+        }
+    }
+    
+    private void clearVisualizationLabels() {
+        // Clear Dijkstra distance labels
+        for (Label label : dijkstraDistLabels.values()) {
+            if (label != null && label.getParent() != null) {
+                ((Pane) label.getParent()).getChildren().remove(label);
+            }
+        }
+        dijkstraDistLabels.clear();
+        
+        // Clear Bellman-Ford distance labels
+        for (Label label : bellmanFordDistLabels.values()) {
+            if (label != null && label.getParent() != null) {
+                ((Pane) label.getParent()).getChildren().remove(label);
+            }
+        }
+        bellmanFordDistLabels.clear();
+    }
+    
     private void showErrorInExplanation(String text) {
         // For now, we'll use the regular updateGraphExplanation method
         // In a more advanced implementation, we could style the text area to show red text
@@ -1222,34 +1417,34 @@ public class GraphManager {
         // Check prerequisites and show detailed error messages with clear red styling
         if (!isWeighted) {
             System.out.println("DEBUG: Not weighted - showing error");
-            showErrorInExplanation("🚨 BELLMAN-FORD ALGORITHM ERROR!");
-            showErrorInExplanation("❌ This algorithm is NOT APPLICABLE for unweighted graphs!");
+            showErrorInExplanation("BELLMAN-FORD ALGORITHM ERROR!");
+            showErrorInExplanation("This algorithm is NOT APPLICABLE for unweighted graphs!");
             showErrorInExplanation("");
-            showErrorInExplanation("📋 WHY THIS ERROR OCCURRED:");
+            showErrorInExplanation("WHY THIS ERROR OCCURRED:");
             showErrorInExplanation("   • Bellman-Ford is designed for weighted graphs only");
             showErrorInExplanation("   • It finds shortest paths based on edge weights");
             showErrorInExplanation("   • Unweighted graphs should use BFS instead");
             showErrorInExplanation("");
-            showErrorInExplanation("🔧 HOW TO FIX:");
+            showErrorInExplanation("HOW TO FIX:");
             showErrorInExplanation("   1. Enable 'Weighted' option in graph settings");
             showErrorInExplanation("   2. Add weights to your edges");
             showErrorInExplanation("   3. OR use BFS for unweighted shortest paths");
             showErrorInExplanation("");
-            showErrorInExplanation("💡 TIP: For unweighted graphs, all edges have weight 1,");
+            showErrorInExplanation("TIP: For unweighted graphs, all edges have weight 1,");
             showErrorInExplanation("   so BFS finds shortest paths more efficiently!");
             return;
         }
         
         if (edges.isEmpty()) {
             System.out.println("DEBUG: No edges - showing error");
-            showErrorInExplanation("🚨 BELLMAN-FORD ALGORITHM ERROR!");
-            showErrorInExplanation("❌ This algorithm is NOT APPLICABLE - No edges found!");
+            showErrorInExplanation("BELLMAN-FORD ALGORITHM ERROR!");
+            showErrorInExplanation("This algorithm is NOT APPLICABLE - No edges found!");
             showErrorInExplanation("");
-            showErrorInExplanation("📋 WHY THIS ERROR OCCURRED:");
+            showErrorInExplanation("WHY THIS ERROR OCCURRED:");
             showErrorInExplanation("   • Bellman-Ford requires edges to find shortest paths");
             showErrorInExplanation("   • Cannot compute distances without connections");
             showErrorInExplanation("");
-            showErrorInExplanation("🔧 HOW TO FIX:");
+            showErrorInExplanation("HOW TO FIX:");
             showErrorInExplanation("   1. Add edges between nodes in your graph");
             showErrorInExplanation("   2. Make sure edges have weights");
             showErrorInExplanation("   3. Then try running Bellman-Ford again");
@@ -1258,14 +1453,14 @@ public class GraphManager {
         
         if (graphNodes.size() < 2) {
             System.out.println("DEBUG: Not enough nodes - showing error");
-            showErrorInExplanation("🚨 BELLMAN-FORD ALGORITHM ERROR!");
-            showErrorInExplanation("❌ This algorithm is NOT APPLICABLE - Need at least 2 nodes!");
+            showErrorInExplanation("BELLMAN-FORD ALGORITHM ERROR!");
+            showErrorInExplanation("This algorithm is NOT APPLICABLE - Need at least 2 nodes!");
             showErrorInExplanation("");
-            showErrorInExplanation("📋 WHY THIS ERROR OCCURRED:");
+            showErrorInExplanation("WHY THIS ERROR OCCURRED:");
             showErrorInExplanation("   • Bellman-Ford finds shortest paths between nodes");
             showErrorInExplanation("   • Need at least 2 nodes to have meaningful paths");
             showErrorInExplanation("");
-            showErrorInExplanation("🔧 HOW TO FIX:");
+            showErrorInExplanation("HOW TO FIX:");
             showErrorInExplanation("   1. Add more nodes to your graph");
             showErrorInExplanation("   2. Connect them with weighted edges");
             showErrorInExplanation("   3. Then try running Bellman-Ford again");
@@ -1274,27 +1469,33 @@ public class GraphManager {
         
         // Algorithm is applicable - proceed with normal execution
         System.out.println("DEBUG: Starting normal Bellman-Ford execution");
-        updateGraphExplanation("✓ Starting Bellman-Ford Algorithm from node " + start.getId());
-        updateGraphExplanation("Initializing distances: Source = 0, Others = ∞");
+        updateGraphExplanation("Starting Bellman-Ford from " + start.getId() + " (Source=0, Others=∞)");
         
         Map<String, Double> dist = new HashMap<>(); 
-        Map<String, Label> distanceLabels = new HashMap<>(); // Store distance labels for each node
+        
+        // Clear any existing Bellman-Ford distance labels
+        for (Label label : bellmanFordDistLabels.values()) {
+            if (label != null && label.getParent() != null) {
+                ((Pane) label.getParent()).getChildren().remove(label);
+            }
+        }
+        bellmanFordDistLabels.clear();
         
         // Initialize distances and create distance labels
         for(String id: graphNodes.keySet()) {
             dist.put(id, Double.POSITIVE_INFINITY);
             
-            // Create distance label for each node with same styling as weight labels but smaller
+            // Create distance label for each node with cyan styling for Bellman-Ford
             GraphNode node = graphNodes.get(id);
             Label distLabel = new Label();
             distLabel.setStyle(
                 "-fx-text-fill: white;" +
-                "-fx-font-size: 13px;" +  // Increased from 12px
-                "-fx-font-weight: 650;" +  // Increased from 600
-                "-fx-background-color: rgba(50, 205, 50, 0.85);" +  // Light green background
+                "-fx-font-size: 13px;" +
+                "-fx-font-weight: 650;" +
+                "-fx-background-color: rgba(0, 255, 255, 0.85);" +  // Cyan background
                 "-fx-background-radius: 3;" +
-                "-fx-padding: 2 5;" +  // Increased from 1 4
-                "-fx-border-color: #32cd32;" +  // Light green border
+                "-fx-padding: 2 5;" +
+                "-fx-border-color: #00ffff;" +  // Cyan border
                 "-fx-border-width: 0.5;" +
                 "-fx-border-radius: 3;" +
                 "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 6, 0.5, 1, 1);"
@@ -1314,7 +1515,7 @@ public class GraphManager {
                 distLabel.setText("∞");
             }
             
-            distanceLabels.put(id, distLabel);
+            bellmanFordDistLabels.put(id, distLabel);
             graphCanvas.getChildren().add(distLabel);
         }
         
@@ -1324,261 +1525,372 @@ public class GraphManager {
         int step=0; 
         int n=graphNodes.size();
         
-        updateGraphExplanation("Graph has " + n + " nodes, so we'll run " + (n-1) + " iterations (n-1 rule)");
-        updateGraphExplanation("======================================");
+        updateGraphExplanation("Will run " + (n-1) + " iterations to relax all edges");
         
         // Main relaxation loop (ALWAYS V-1 iterations - no early termination)
         for(int i=0;i<n-1;i++){
             final int iteration = i + 1;
             
             // Show iteration header
-            tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*450)), e-> {
-                updateGraphExplanation("🔄 ITERATION " + iteration + " of " + (n-1));
-                updateGraphExplanation("Checking all edges for possible relaxation...");
+            tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
+                updateGraphExplanation("Iteration " + iteration + "/" + (n-1) + " - Checking all edges for relaxation");
             }));
             
-            // Store distances at start of iteration for comparison
-            Map<String, Double> iterationStartDistances = new HashMap<>(dist);
             boolean[] anyRelaxedInIteration = {false};
-            int edgeCount = 0;
             
             for(EdgeRecord er: edges){ 
-                edgeCount++;
-                final int currentEdge = edgeCount;
-                final int totalEdges = edges.size();
                 double w=er.weight;
                 
-                // Show which edge we're examining
-                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*300)), e-> {
-                    updateGraphExplanation("  📍 Edge " + currentEdge + "/" + totalEdges + ": " + er.a + "→" + er.b + " (weight: " + w + ")");
+                // Show which edge we're examining and highlight both nodes and edge
+                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
+                    updateGraphExplanation("Examining edge " + er.a + "→" + er.b + " (weight " + w + ")");
                     // Highlight the edge being examined
                     er.line.setStroke(Color.web("#FFA500")); // Orange highlight
+                    er.line.setStrokeWidth(4);
+                    // Highlight both nodes involved in the edge
+                    graphNodes.get(er.a).getCircle().setFill(Color.web("#E67E22")); // Orange for source
+                    graphNodes.get(er.b).getCircle().setFill(Color.web("#F39C12")); // Lighter orange for target
                 }));
                 
                 if(dist.get(er.a)!=Double.POSITIVE_INFINITY && dist.get(er.a)+w<dist.get(er.b)){ 
                     double oldDist = dist.get(er.b);
                     dist.put(er.b, dist.get(er.a)+w); 
                     anyRelaxedInIteration[0] = true;
-                    final String fromNode = er.a;
                     final String toNode = er.b;
                     final double newDist = dist.get(er.a)+w;
-                    final Label distLabel = distanceLabels.get(toNode);
-                    int delay= getAnimationDelay(step++*450); 
-                    Circle c = graphNodes.get(er.b).getCircle(); 
+                    final Label distLabel = bellmanFordDistLabels.get(toNode);
+                    int delay= getAnimationDelay(step++*600);
+                    Circle c = graphNodes.get(er.b).getCircle();
                     tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(delay), e-> {
-                        c.setFill(Color.web("#1abc9c"));
-                        // Update distance label
+                        c.setFill(Color.web("#27AE60")); // Green for successful relaxation
+                        // Update distance label with animation
                         distLabel.setText(String.format("%.1f", newDist));
-                        distLabel.setStyle(distLabel.getStyle().replaceAll("-fx-border-color: #[0-9A-Fa-f]+;", "-fx-border-color: #00FF00;")); // Green border when updated
-                        updateGraphExplanation("    ✅ RELAXED! " + String.format("%.1f", oldDist) + " → " + String.format("%.1f", newDist) + " (saved " + String.format("%.1f", oldDist - newDist) + ")");
+                        distLabel.setStyle(distLabel.getStyle().replaceAll("-fx-background-color: rgba\\([^)]+\\);", "-fx-background-color: rgba(39, 174, 96, 0.9);")); // Green background when updated
+                        updateGraphExplanation("✓ Relaxed! " + er.b + ": " + String.format("%.1f", oldDist) + " → " + String.format("%.1f", newDist));
                     }));
                     
-                    // Reset edge and label colors
-                    tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(delay + 200), e-> {
-                        er.line.setStroke(Color.WHITE);
-                        distLabel.setStyle(distLabel.getStyle().replaceAll("-fx-border-color: #[0-9A-Fa-f]+;", "-fx-border-color: #00ffff;"));
+                    // Add a pause to show the result before moving to next edge
+                    tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(delay + 600), e-> {
+                        updateGraphExplanation("Edge " + er.a + "→" + er.b + " processing complete");
                     }));
                 } else {
                     // Edge not relaxed
-                    tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*300)), e-> {
+                    tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
                         if (dist.get(er.a) == Double.POSITIVE_INFINITY) {
-                            updateGraphExplanation("    ❌ No relaxation: distance to " + er.a + " is still ∞");
+                            updateGraphExplanation("✗ No relaxation: " + er.a + " unreachable");
                         } else {
                             double currentPath = dist.get(er.a) + w;
                             double existingDist = dist.get(er.b);
-                            if (existingDist == Double.POSITIVE_INFINITY) {
-                                updateGraphExplanation("    ❌ No relaxation: " + String.format("%.1f", currentPath) + " ≥ ∞ (no improvement)");
-                            } else {
-                                updateGraphExplanation("    ❌ No relaxation: " + String.format("%.1f", currentPath) + " ≥ " + String.format("%.1f", existingDist) + " (no improvement)");
-                            }
+                            String existingStr = existingDist == Double.POSITIVE_INFINITY ? "∞" : String.format("%.1f", existingDist);
+                            updateGraphExplanation("✗ No relaxation: " + String.format("%.1f", currentPath) + " ≥ " + existingStr);
                         }
-                        // Reset edge color
-                        er.line.setStroke(Color.WHITE);
                     }));
+                    
+                    // Add a pause to show the result before moving to next edge
+                    tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step*600 + 300)), e-> {
+                        updateGraphExplanation("Edge " + er.a + "→" + er.b + " processing complete");
+                    }));
+                    step++; // Increment step for next edge
                 }
+                
+                // Reset edge and node colors after processing is complete, with delay
+                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
+                    // Reset edge color and width
+                    er.line.setStroke(Color.WHITE);
+                    er.line.setStrokeWidth(2);
+                    // Reset node colors to default (but keep distance labels as they are)
+                    graphNodes.get(er.a).getCircle().setFill(Color.web("#3498db"));
+                    graphNodes.get(er.b).getCircle().setFill(Color.web("#3498db"));
+                }));
                 
                 // Handle undirected graphs
                 if(!isDirected && dist.get(er.b)!=Double.POSITIVE_INFINITY && dist.get(er.b)+w<dist.get(er.a)){ 
                     double oldDist = dist.get(er.a);
                     dist.put(er.a, dist.get(er.b)+w); 
                     anyRelaxedInIteration[0] = true;
-                    final String fromNode = er.b;
                     final String toNode = er.a;
                     final double newDist = dist.get(er.b)+w;
-                    final Label distLabel = distanceLabels.get(toNode);
-                    int delay= getAnimationDelay(step++*450); 
-                    Circle c2 = graphNodes.get(er.a).getCircle(); 
+                    final Label distLabel = bellmanFordDistLabels.get(toNode);
+                    int delay= getAnimationDelay(step++*600);
+                    Circle c2 = graphNodes.get(er.a).getCircle();
                     tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(delay), e-> {
-                        c2.setFill(Color.web("#16a085"));
+                        c2.setFill(Color.web("#27AE60")); // Green for successful relaxation
                         // Update distance label
                         distLabel.setText(String.format("%.1f", newDist));
-                        distLabel.setStyle(distLabel.getStyle().replaceAll("-fx-border-color: #[0-9A-Fa-f]+;", "-fx-border-color: #00FF00;")); // Green border when updated
-                        updateGraphExplanation("    ✅ RELAXED! " + String.format("%.1f", oldDist) + " → " + String.format("%.1f", newDist) + " (saved " + String.format("%.1f", oldDist - newDist) + ")");
+                        distLabel.setStyle(distLabel.getStyle().replaceAll("-fx-background-color: rgba\\([^)]+\\);", "-fx-background-color: rgba(39, 174, 96, 0.9);")); // Green background when updated
+                        updateGraphExplanation("✓ Relaxed! " + er.a + ": " + String.format("%.1f", oldDist) + " → " + String.format("%.1f", newDist));
                     }));
                     
-                    // Reset colors
-                    tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(delay + 200), e-> {
-                        er.line.setStroke(Color.WHITE);
-                        distLabel.setStyle(distLabel.getStyle().replaceAll("-fx-border-color: #[0-9A-Fa-f]+;", "-fx-border-color: #32cd32;"));  // Back to light green
+                    // Add a pause for undirected edge result
+                    tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(delay + 600), e-> {
+                        updateGraphExplanation("Reverse edge " + er.b + "→" + er.a + " also processed");
                     }));
                 }
+                
+                // Add a clear separation before moving to the next edge
+                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
+                    updateGraphExplanation("---"); // Visual separator
+                }));
             }
             
             // Show iteration summary
-            tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*450)), e-> {
-                updateGraphExplanation("📊 ITERATION " + iteration + " SUMMARY:");
+            tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
                 if (anyRelaxedInIteration[0]) {
-                    updateGraphExplanation("    ✅ Some edges were relaxed - distances improved");
+                    updateGraphExplanation("Iteration " + iteration + " complete: Distances improved");
                 } else {
-                    updateGraphExplanation("    ❌ No edges relaxed - no distance improvements");
+                    updateGraphExplanation("Iteration " + iteration + " complete: No improvements");
                 }
-                
-                // Show current distances after this iteration
-                updateGraphExplanation("📏 Current distances from source " + start.getId() + ":");
-                for(Map.Entry<String, Double> entry : dist.entrySet()) {
-                    String nodeId = entry.getKey();
-                    Double distance = entry.getValue();
-                    String distStr = distance == Double.POSITIVE_INFINITY ? "∞" : String.format("%.1f", distance);
-                    String changeStr = "";
-                    if (iterationStartDistances.containsKey(nodeId) && !iterationStartDistances.get(nodeId).equals(distance)) {
-                        double oldDist = iterationStartDistances.get(nodeId);
-                        String oldStr = oldDist == Double.POSITIVE_INFINITY ? "∞" : String.format("%.1f", oldDist);
-                        changeStr = " (was " + oldStr + ")";
-                    }
-                    updateGraphExplanation("    " + nodeId + ": " + distStr + changeStr);
+            }));
+            
+            // Reset all distance label backgrounds to cyan after each iteration
+            tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
+                // Reset distance label backgrounds to cyan
+                for(Label label : bellmanFordDistLabels.values()) {
+                    label.setStyle(label.getStyle().replaceAll("-fx-background-color: rgba\\([^)]+\\);", "-fx-background-color: rgba(0, 255, 255, 0.85);"));
                 }
-                updateGraphExplanation("--------------------------------------");
+                updateGraphExplanation("Ready for next iteration...");
             }));
         }
         
         // Check for negative cycles
-        tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*450)), e-> {
-            updateGraphExplanation("🔍 NEGATIVE CYCLE DETECTION PHASE");
-            updateGraphExplanation("Now checking if any edge can still be relaxed...");
-            updateGraphExplanation("If YES → Negative cycle exists");
-            updateGraphExplanation("If NO  → Algorithm completed successfully");
+        tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
+            updateGraphExplanation("Phase 2: Checking for negative cycles");
         }));
         
         boolean[] hasNegativeCycle = {false};
-        int cycleEdgeCount = 0;
         for(EdgeRecord er: edges){ 
-            cycleEdgeCount++;
-            final int currentEdge = cycleEdgeCount;
-            final int totalEdges = edges.size();
             double w=er.weight; 
             
-            tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*300)), e-> {
-                updateGraphExplanation("  🔍 Checking edge " + currentEdge + "/" + totalEdges + ": " + er.a + "→" + er.b);
-                er.line.setStroke(Color.web("#FFA500")); // Orange highlight during check
+            tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
+                updateGraphExplanation("Checking edge " + er.a + "→" + er.b + " for relaxation");
+                er.line.setStroke(Color.web("#E74C3C")); // Red highlight during cycle check
+                er.line.setStrokeWidth(4);
+                // Highlight nodes involved
+                graphNodes.get(er.a).getCircle().setFill(Color.web("#E74C3C"));
+                graphNodes.get(er.b).getCircle().setFill(Color.web("#C0392B"));
             }));
             
             if(dist.get(er.a)!=Double.POSITIVE_INFINITY && dist.get(er.a)+w<dist.get(er.b)){ 
                 hasNegativeCycle[0] = true;
-                final String fromNode = er.a;
-                final String toNode = er.b;
-                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*450)), e-> {
-                    er.line.setStroke(Color.web("#EF4444"));
-                    er.line.setStrokeWidth(4);
-                    updateGraphExplanation("    🚨 NEGATIVE CYCLE DETECTED!");
-                    updateGraphExplanation("    Edge " + fromNode + "→" + toNode + " can still be relaxed!");
-                    updateGraphExplanation("    Current: " + String.format("%.1f", dist.get(er.a)) + " + " + w + " = " + String.format("%.1f", dist.get(er.a) + w));
-                    updateGraphExplanation("    But node " + toNode + " distance is: " + String.format("%.1f", dist.get(er.b)));
-                    updateGraphExplanation("    This proves a negative cycle exists!");
+                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
+                    er.line.setStroke(Color.web("#E74C3C"));
+                    er.line.setStrokeWidth(6);
+                    updateGraphExplanation("⚠ NEGATIVE CYCLE DETECTED! Edge " + er.a + "→" + er.b + " can still relax");
                 }));
             } else {
-                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*300)), e-> {
-                    updateGraphExplanation("    ✅ No relaxation possible - edge looks good");
-                    er.line.setStroke(Color.WHITE); // Reset color
+                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
+                    updateGraphExplanation("✓ Edge " + er.a + "→" + er.b + " cannot relax further");
+                    er.line.setStroke(Color.web("#27AE60")); // Green for good edge
+                    er.line.setStrokeWidth(3);
                 }));
             }
             
+            // Reset colors after processing each edge in negative cycle detection
+            tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
+                if (!hasNegativeCycle[0]) {
+                    // Only reset if no negative cycle was detected (keep red if cycle found)
+                    er.line.setStroke(Color.WHITE);
+                    er.line.setStrokeWidth(2);
+                }
+                graphNodes.get(er.a).getCircle().setFill(Color.web("#3498db"));
+                graphNodes.get(er.b).getCircle().setFill(Color.web("#3498db"));
+            }));
+            
             if(!isDirected && dist.get(er.b)!=Double.POSITIVE_INFINITY && dist.get(er.b)+w<dist.get(er.a)){ 
                 hasNegativeCycle[0] = true;
-                final String fromNode = er.b;
-                final String toNode = er.a;
-                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*450)), e-> {
-                    er.line.setStroke(Color.web("#EF4444"));
-                    er.line.setStrokeWidth(4);
-                    updateGraphExplanation("    🚨 NEGATIVE CYCLE DETECTED!");
-                    updateGraphExplanation("    Edge " + fromNode + "→" + toNode + " can still be relaxed!");
-                    updateGraphExplanation("    This proves a negative cycle exists!");
+                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
+                    er.line.setStroke(Color.web("#E74C3C"));
+                    er.line.setStrokeWidth(6);
+                    updateGraphExplanation("⚠ NEGATIVE CYCLE DETECTED! Edge " + er.b + "→" + er.a + " can still relax");
                 }));
             }
         }
         
         // Final completion message
-        tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*450)), e-> {
-            updateGraphExplanation("======================================");
+        tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
             if (hasNegativeCycle[0]) {
-                updateGraphExplanation("🚨 BELLMAN-FORD RESULT: NEGATIVE CYCLE FOUND!");
-                updateGraphExplanation("❌ No shortest paths exist due to negative cycle");
-                updateGraphExplanation("💡 In graphs with negative cycles, distances can be");
-                updateGraphExplanation("   infinitely decreased by going around the cycle");
+                updateGraphExplanation("❌ RESULT: Negative cycle found - no shortest paths exist");
             } else {
-                updateGraphExplanation("✅ BELLMAN-FORD COMPLETED SUCCESSFULLY!");
-                updateGraphExplanation("🎉 No negative cycles found - all distances are optimal");
-                updateGraphExplanation("📊 FINAL SHORTEST DISTANCES FROM SOURCE " + start.getId() + ":");
-                // Show final distances in a cleaner format
-                for(Map.Entry<String, Double> entry : dist.entrySet()) {
-                    String nodeId = entry.getKey();
-                    Double distance = entry.getValue();
-                    if (!nodeId.equals(start.getId())) {
-                        String distStr = distance == Double.POSITIVE_INFINITY ? "∞ (unreachable)" : String.format("%.1f", distance);
-                        String pathInfo = distance == Double.POSITIVE_INFINITY ? "" : " units";
-                        updateGraphExplanation("    " + start.getId() + " → " + nodeId + ": " + distStr + pathInfo);
-                    }
-                }
-                updateGraphExplanation("💡 These are the shortest possible distances!");
+                updateGraphExplanation("✅ RESULT: Bellman-Ford completed - shortest paths found");
             }
-            updateGraphExplanation("======================================");
         }));
         
+        // Store timeline for potential stopping and play
+        currentVisualizationTimeline = tl;
+        enablePauseButton();
         tl.play();
     }
     
     private void visualizeFloydWarshall(){
-        int n=graphNodes.size(); 
-        if(n==0) return; 
-        List<String> ids=new ArrayList<>(graphNodes.keySet());
-        double[][] d = new double[n][n]; 
-        
-        for(int i=0;i<n;i++) Arrays.fill(d[i], Double.POSITIVE_INFINITY); 
-        for(int i=0;i<n;i++) d[i][i]=0;
-        for(EdgeRecord er: edges){ 
-        	int ai=ids.indexOf(er.a), bi=ids.indexOf(er.b); 
-        	d[ai][bi]=Math.min(d[ai][bi], er.weight); 
-        	if(!isDirected) d[bi][ai]=Math.min(d[bi][ai], er.weight); 
+        clearGraphExplanation();
+        int n = graphNodes.size(); 
+        if (n == 0) {
+            updateGraphExplanation("FLOYD-WARSHALL ERROR: No nodes found!");
+            return; 
         }
         
-        Timeline tl=new Timeline(); 
-        int step=0; 
-        for(int k=0;k<n;k++){ 
-        	for(int i=0;i<n;i++) {
-        		for(int j=0;j<n;j++){ 
-        			if(d[i][k]+d[k][j] < d[i][j]){ 
-        				d[i][j]=d[i][k]+d[k][j]; 
-        				int delay= getAnimationDelay(step++*200); 
-        				Circle ci = graphNodes.get(ids.get(i)).getCircle(); 
-        				tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(delay), e-> ci.setFill(Color.web("#f1c40f")))); 
-        			} 
-        		} 
-        	}
+        if (!isWeighted) {
+            updateGraphExplanation("FLOYD-WARSHALL ERROR: Algorithm requires weighted graph!");
+            updateGraphExplanation("Enable 'Weighted' option and add edge weights to continue.");
+            return;
         }
         
+        List<String> ids = new ArrayList<>(graphNodes.keySet());
+        double[][] dist = new double[n][n]; 
+        
+        // Initialize distance matrix
+        updateGraphExplanation("FLOYD-WARSHALL INITIALIZATION:");
+        updateGraphExplanation("Setting up distance matrix...");
+        
+        for(int i = 0; i < n; i++) {
+            Arrays.fill(dist[i], Double.POSITIVE_INFINITY); 
+        }
+        for(int i = 0; i < n; i++) {
+            dist[i][i] = 0;
+        }
+        
+        // Set edge weights
+        for(EdgeRecord er : edges){ 
+            int ai = ids.indexOf(er.a);
+            int bi = ids.indexOf(er.b); 
+            dist[ai][bi] = Math.min(dist[ai][bi], er.weight); 
+            if(!isDirected) {
+                dist[bi][ai] = Math.min(dist[bi][ai], er.weight); 
+            }
+        }
+        
+        // Setup distance labels using Dijkstra's style
+        resetFloydWarshallLabels();
+        for(GraphNode gn : graphNodes.values()) {
+            ensureFloydWarshallLabel(gn);
+        }
+        
+        updateGraphExplanation("Matrix initialized with direct edge weights");
+        updateGraphExplanation("Starting triple-nested loop algorithm...");
+        
+        Timeline tl = new Timeline(); 
+        int stepDelay = 0;
+        
+        for(int k = 0; k < n; k++){ 
+            String intermediateNode = ids.get(k);
+            final int fk = k;
+            
+            // Highlight intermediate node
+            tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(stepDelay++ * 600)), e -> {
+                updateGraphExplanation("PHASE " + (fk + 1) + ": Using node " + intermediateNode + " as intermediate");
+                GraphNode intermediate = graphNodes.get(intermediateNode);
+                if (intermediate != null) {
+                    intermediate.getCircle().setFill(Color.web("#e74c3c")); // Red for intermediate
+                }
+            }));
+            
+            for(int i = 0; i < n; i++) {
+                for(int j = 0; j < n; j++){ 
+                    if(i != j && dist[i][k] + dist[k][j] < dist[i][j]){ 
+                        double oldDist = dist[i][j];
+                        dist[i][j] = dist[i][k] + dist[k][j]; 
+                        final double newDist = dist[i][j];
+                        final String fromNode = ids.get(i);
+                        final String toNode = ids.get(j);
+                        
+                        tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(stepDelay++ * 600)), e -> {
+                            updateGraphExplanation("Improved path " + fromNode + " → " + toNode + ": " + 
+                                formatDist(oldDist) + " → " + formatDist(newDist));
+                            
+                            // Highlight source and destination
+                            GraphNode source = graphNodes.get(fromNode);
+                            GraphNode dest = graphNodes.get(toNode);
+                            if (source != null) source.getCircle().setFill(Color.web("#3498db")); // Blue for source
+                            if (dest != null) dest.getCircle().setFill(Color.web("#2ecc71")); // Green for destination
+                            
+                            // Update distance label
+                            Label label = floydWarshallDistLabels.get(toNode);
+                            if (label != null) {
+                                label.setText(formatDist(newDist));
+                            }
+                        }));
+                        
+                        // Reset colors after a brief delay
+                        tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(stepDelay * 600 + 300)), e -> {
+                            resetNodeColors();
+                        }));
+                    } 
+                } 
+            }
+        }
+        
+        // Final completion message
+        tl.getKeyFrames().add(new KeyFrame(Duration.millis(getAnimationDelay(stepDelay * 600)), e -> {
+            updateGraphExplanation("FLOYD-WARSHALL COMPLETE: All shortest paths computed!");
+            resetNodeColors();
+        }));
+        
+        // Store timeline for potential stopping and play
+        currentVisualizationTimeline = tl;
+        enablePauseButton();
         tl.play();
+    }
+    
+    // Floyd-Warshall distance labels (same style as Dijkstra)
+    private Map<String, Label> floydWarshallDistLabels = new HashMap<>();
+    
+    private void resetFloydWarshallLabels(){
+        if(graphCanvas != null){
+            for(Label label : floydWarshallDistLabels.values()) {
+                graphCanvas.getChildren().remove(label);
+            }
+        }
+        floydWarshallDistLabels.clear();
+    }
+    
+    private void ensureFloydWarshallLabel(GraphNode node){
+        if(node == null) return;
+        if(floydWarshallDistLabels.containsKey(node.getId())) return;
+        Circle c = node.getCircle(); 
+        if(c == null || graphCanvas == null) return;
+        
+        Label box = new Label("∞");
+        box.setAlignment(Pos.CENTER);
+        box.setMinSize(30, 18);
+        box.setPrefSize(32, 18);
+        box.setStyle(
+            "-fx-text-fill: white;" +
+            "-fx-font-size: 13px;" +
+            "-fx-font-weight: 650;" +
+            "-fx-background-color: rgba(50, 205, 50, 0.85);" +  // Light green background
+            "-fx-background-radius: 3;" +
+            "-fx-padding: 2 5;" +
+            "-fx-border-color: #32cd32;" +  // Light green border
+            "-fx-border-width: 0.5;" +
+            "-fx-border-radius: 3;" +
+            "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 6, 0.5, 1, 1);"
+        );
+        
+        positionFloydWarshallLabel(node, box);
+        graphCanvas.getChildren().add(box);
+        floydWarshallDistLabels.put(node.getId(), box);
+    }
+    
+    private void positionFloydWarshallLabel(GraphNode node, Label box){
+        Circle c = node.getCircle(); 
+        if(c == null) return;
+        double r = c.getRadius();
+        // Place to upper-right of the circle (same as Dijkstra)
+        box.setLayoutX(c.getCenterX() + r + 4);
+        box.setLayoutY(c.getCenterY() - r - 4);
     }
     
     private void visualizePrim(){ 
         if(isDirected) {
-            showErrorInExplanation("🚨 PRIM'S ALGORITHM ERROR!");
-            showErrorInExplanation("❌ This algorithm is NOT APPLICABLE for directed graphs!");
+            showErrorInExplanation("PRIM'S ALGORITHM ERROR!");
+            showErrorInExplanation("This algorithm is NOT APPLICABLE for directed graphs!");
             showErrorInExplanation("");
-            showErrorInExplanation("📋 WHY THIS ERROR OCCURRED:");
+            showErrorInExplanation("WHY THIS ERROR OCCURRED:");
             showErrorInExplanation("   • Prim's algorithm finds Minimum Spanning Tree (MST)");
             showErrorInExplanation("   • MST concept only applies to undirected graphs");
             showErrorInExplanation("   • Directed graphs don't have traditional spanning trees");
             showErrorInExplanation("");
-            showErrorInExplanation("🔧 HOW TO FIX:");
+            showErrorInExplanation("HOW TO FIX:");
             showErrorInExplanation("   1. Disable 'Directed' option in graph settings");
             showErrorInExplanation("   2. Make sure graph is undirected");
             showErrorInExplanation("   3. Then try running Prim's algorithm again");
@@ -1586,15 +1898,15 @@ public class GraphManager {
         }
         
         if (!isWeighted) {
-            showErrorInExplanation("🚨 PRIM'S ALGORITHM ERROR!");
-            showErrorInExplanation("❌ This algorithm is NOT APPLICABLE for unweighted graphs!");
+            showErrorInExplanation("PRIM'S ALGORITHM ERROR!");
+            showErrorInExplanation("This algorithm is NOT APPLICABLE for unweighted graphs!");
             showErrorInExplanation("");
-            showErrorInExplanation("📋 WHY THIS ERROR OCCURRED:");
+            showErrorInExplanation("WHY THIS ERROR OCCURRED:");
             showErrorInExplanation("   • Prim's algorithm finds Minimum Spanning Tree based on edge weights");
             showErrorInExplanation("   • Without weights, all edges would be considered equal");
             showErrorInExplanation("   • The concept of 'minimum' requires weighted edges");
             showErrorInExplanation("");
-            showErrorInExplanation("🔧 HOW TO FIX:");
+            showErrorInExplanation("HOW TO FIX:");
             showErrorInExplanation("   1. Enable 'Weighted' option in graph settings");
             showErrorInExplanation("   2. Add weights to your edges");
             showErrorInExplanation("   3. Then try running Prim's algorithm again");
@@ -1602,14 +1914,14 @@ public class GraphManager {
         }
         
         if(graphNodes.isEmpty()) {
-            showErrorInExplanation("🚨 PRIM'S ALGORITHM ERROR!");
-            showErrorInExplanation("❌ This algorithm is NOT APPLICABLE - No nodes found!");
+            showErrorInExplanation("PRIM'S ALGORITHM ERROR!");
+            showErrorInExplanation("This algorithm is NOT APPLICABLE - No nodes found!");
             showErrorInExplanation("");
-            showErrorInExplanation("📋 WHY THIS ERROR OCCURRED:");
+            showErrorInExplanation("WHY THIS ERROR OCCURRED:");
             showErrorInExplanation("   • Prim's algorithm needs nodes to create spanning tree");
             showErrorInExplanation("   • Cannot build MST without graph vertices");
             showErrorInExplanation("");
-            showErrorInExplanation("🔧 HOW TO FIX:");
+            showErrorInExplanation("HOW TO FIX:");
             showErrorInExplanation("   1. Add nodes to your graph");
             showErrorInExplanation("   2. Connect them with weighted edges");
             showErrorInExplanation("   3. Then try running Prim's algorithm again");
@@ -1617,14 +1929,14 @@ public class GraphManager {
         }
         
         if (edges.isEmpty()) {
-            showErrorInExplanation("🚨 PRIM'S ALGORITHM ERROR!");
-            showErrorInExplanation("❌ This algorithm is NOT APPLICABLE - No edges found!");
+            showErrorInExplanation("PRIM'S ALGORITHM ERROR!");
+            showErrorInExplanation("This algorithm is NOT APPLICABLE - No edges found!");
             showErrorInExplanation("");
-            showErrorInExplanation("📋 WHY THIS ERROR OCCURRED:");
+            showErrorInExplanation("WHY THIS ERROR OCCURRED:");
             showErrorInExplanation("   • Prim's algorithm needs edges to create spanning tree");
             showErrorInExplanation("   • Cannot connect nodes without edges");
             showErrorInExplanation("");
-            showErrorInExplanation("🔧 HOW TO FIX:");
+            showErrorInExplanation("HOW TO FIX:");
             showErrorInExplanation("   1. Add weighted edges between nodes");
             showErrorInExplanation("   2. Make sure graph is connected");
             showErrorInExplanation("   3. Then try running Prim's algorithm again");
@@ -1632,16 +1944,15 @@ public class GraphManager {
         }
         
         clearGraphExplanation();
-        resetPrimLabels(); // Clear any existing Prim cost labels
         
         // Algorithm is applicable - proceed with educational Prim's implementation
         GraphNode start = bfsSource != null ? bfsSource : graphNodes.values().iterator().next();
-        updateGraphExplanation("🌲 PRIM'S MINIMUM SPANNING TREE ALGORITHM");
+        updateGraphExplanation("PRIM'S MINIMUM SPANNING TREE ALGORITHM");
         updateGraphExplanation("======================================");
-        updateGraphExplanation("📍 Starting from node: " + start.getId());
-        updateGraphExplanation("🎯 Goal: Find minimum weight tree connecting all nodes");
+        updateGraphExplanation("Starting from node: " + start.getId());
+        updateGraphExplanation("Goal: Find minimum weight tree connecting all nodes");
         updateGraphExplanation("");
-        updateGraphExplanation("💡 ALGORITHM CONCEPT:");
+        updateGraphExplanation("ALGORITHM CONCEPT:");
         updateGraphExplanation("   • Start with any node (we chose " + start.getId() + ")");
         updateGraphExplanation("   • Repeatedly add the cheapest edge that connects");
         updateGraphExplanation("     a node IN the tree to a node NOT in the tree");
@@ -1652,24 +1963,6 @@ public class GraphManager {
         Set<EdgeRecord> mstEdges = new HashSet<>();
         Timeline tl = new Timeline();
         int step = 0;
-        
-        // Create distance labels for nodes (same as Kruskal's style)
-        for(String nodeId : graphNodes.keySet()) {
-            GraphNode node = graphNodes.get(nodeId);
-            Label distanceLabel = new Label("∞");
-            distanceLabel.setStyle(
-                "-fx-background-color: #90EE90; -fx-text-fill: black; -fx-font-weight: bold; " +
-                "-fx-font-size: 13px; -fx-background-radius: 8px; -fx-padding: 3px 6px;"
-            );
-            
-            // Position above node
-            distanceLabel.layoutXProperty().bind(node.getCircle().centerXProperty().subtract(distanceLabel.widthProperty().divide(2)));
-            distanceLabel.layoutYProperty().bind(node.getCircle().centerYProperty().subtract(60));
-            distanceLabel.setMouseTransparent(true);
-            
-            primCostLabels.put(nodeId, distanceLabel);
-            graphCanvas.getChildren().add(distanceLabel);
-        }
         
         // Create total cost label for smooth animation
         Label totalCostLabel = new Label("MST Cost: 0.0");
@@ -1686,30 +1979,15 @@ public class GraphManager {
         
         // Step 1: Initialize - Add starting node to MST
         inMST.add(start.getId());
-        tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*500)), e-> {
+        tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
             start.getCircle().setFill(Color.web("#9932cc")); // Purple for MST nodes
             start.getCircle().setStroke(Color.web("#8b008b"));
             start.getCircle().setStrokeWidth(4);
             
-            // Update starting node's distance label to "0"
-            Label startLabel = primCostLabels.get(start.getId());
-            if(startLabel != null) {
-                startLabel.setText("0.0");
-                // Flash bright green animation
-                startLabel.setStyle("-fx-background-color: #00FF00; -fx-text-fill: black; -fx-font-weight: bold; -fx-font-size: 13px; -fx-background-radius: 8px; -fx-padding: 3px 6px;");
-                
-                // Animate back to light green after flash
-                Timeline flashTimeline = new Timeline();
-                flashTimeline.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(400), ev -> {
-                    startLabel.setStyle("-fx-background-color: #90EE90; -fx-text-fill: black; -fx-font-weight: bold; -fx-font-size: 13px; -fx-background-radius: 8px; -fx-padding: 3px 6px;");
-                }));
-                flashTimeline.play();
-            }
-            
-            updateGraphExplanation("🟣 INITIALIZATION COMPLETE");
-            updateGraphExplanation("   ✅ Added node " + start.getId() + " to MST");
-            updateGraphExplanation("   📊 Nodes in MST: {" + start.getId() + "}");
-            updateGraphExplanation("   💰 Total MST cost: 0.0");
+            updateGraphExplanation("INITIALIZATION COMPLETE");
+            updateGraphExplanation("   Added node " + start.getId() + " to MST");
+            updateGraphExplanation("   Nodes in MST: {" + start.getId() + "}");
+            updateGraphExplanation("   Total MST cost: 0.0");
             updateGraphExplanation("");
         }));
         
@@ -1724,8 +2002,8 @@ public class GraphManager {
             String bestToNode = null;
             
             final int currentIteration = iteration;
-            tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*500)), e-> {
-                updateGraphExplanation("🔍 ITERATION " + currentIteration + " - FINDING CHEAPEST CUT EDGE");
+            tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
+                updateGraphExplanation("ITERATION " + currentIteration + " - FINDING CHEAPEST CUT EDGE");
                 updateGraphExplanation("   Looking for minimum weight edge connecting:");
                 updateGraphExplanation("   • A node IN the MST: " + String.join(", ", inMST));
                 updateGraphExplanation("   • A node NOT in MST");
@@ -1751,8 +2029,8 @@ public class GraphManager {
             }
             
             if(bestEdge == null) {
-                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*500)), e-> {
-                    updateGraphExplanation("❌ GRAPH IS NOT CONNECTED!");
+                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
+                    updateGraphExplanation("GRAPH IS NOT CONNECTED!");
                     updateGraphExplanation("   No edges found connecting MST to remaining nodes");
                     updateGraphExplanation("   Cannot complete Minimum Spanning Tree");
                 }));
@@ -1764,7 +2042,7 @@ public class GraphManager {
                 final EdgeRecord candidate = candidateEdges.get(i);
                 final int candidateNum = i + 1;
                 final int totalCandidates = candidateEdges.size();
-                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*300)), e-> {
+                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
                     candidate.line.setStroke(Color.web("#ffa500")); // Orange for examination
                     candidate.line.setStrokeWidth(3);
                     String fromNode = inMST.contains(candidate.a) ? candidate.a : candidate.b;
@@ -1774,7 +2052,7 @@ public class GraphManager {
                 }));
                 
                 // Reset color after examination
-                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*200)), e-> {
+                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
                     candidate.line.setStroke(Color.WHITE);
                     candidate.line.setStrokeWidth(2);
                 }));
@@ -1800,21 +2078,6 @@ public class GraphManager {
                 newNode.getCircle().setStroke(Color.web("#8b008b"));
                 newNode.getCircle().setStrokeWidth(4);
                 
-                // Update distance label for new node (same style as Kruskal's)
-                Label distanceLabel = primCostLabels.get(finalBestToNode);
-                if(distanceLabel != null) {
-                    distanceLabel.setText(String.format("%.1f", finalBestWeight));
-                    // Bright green flash animation (same as Kruskal's)
-                    distanceLabel.setStyle("-fx-background-color: #00FF00; -fx-text-fill: black; -fx-font-weight: bold; -fx-font-size: 13px; -fx-background-radius: 8px; -fx-padding: 3px 6px;");
-                    
-                    // Animate back to light green after flash
-                    Timeline flashTimeline = new Timeline();
-                    flashTimeline.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(400), ev -> {
-                        distanceLabel.setStyle("-fx-background-color: #90EE90; -fx-text-fill: black; -fx-font-weight: bold; -fx-font-size: 13px; -fx-background-radius: 8px; -fx-padding: 3px 6px;");
-                    }));
-                    flashTimeline.play();
-                }
-                
                 // Smooth total cost animation
                 Timeline costAnimation = new Timeline();
                 double startCost = finalTotalCost - finalBestWeight;
@@ -1827,16 +2090,16 @@ public class GraphManager {
                 }
                 costAnimation.play();
                 
-                updateGraphExplanation("   ✅ BEST EDGE FOUND: " + finalBestFromNode + "→" + finalBestToNode + 
+                updateGraphExplanation("   BEST EDGE FOUND: " + finalBestFromNode + "→" + finalBestToNode + 
                                       " (weight: " + String.format("%.1f", finalBestWeight) + ")");
-                updateGraphExplanation("   🟣 Added node " + finalBestToNode + " to MST");
-                updateGraphExplanation("   💰 Edge cost: " + String.format("%.1f", finalBestWeight));
-                updateGraphExplanation("   💰 Total MST cost so far: " + String.format("%.1f", finalTotalCost));
+                updateGraphExplanation("   Added node " + finalBestToNode + " to MST");
+                updateGraphExplanation("   Edge cost: " + String.format("%.1f", finalBestWeight));
+                updateGraphExplanation("   Total MST cost so far: " + String.format("%.1f", finalTotalCost));
                 
                 // Show current MST composition
                 Set<String> currentMST = new HashSet<>(inMST);
                 currentMST.add(finalBestToNode);
-                updateGraphExplanation("   📊 Nodes in MST: {" + String.join(", ", currentMST) + "}");
+                updateGraphExplanation("   Nodes in MST: {" + String.join(", ", currentMST) + "}");
                 updateGraphExplanation("");
             }));
             
@@ -1864,44 +2127,47 @@ public class GraphManager {
                 }
             }
             
-            updateGraphExplanation("🧹 CLEANUP: Removed " + edgesToRemove.size() + " edges not in MST");
+            updateGraphExplanation("CLEANUP: Removed " + edgesToRemove.size() + " edges not in MST");
             updateGraphExplanation("======================================");
-            updateGraphExplanation("🎉 PRIM'S ALGORITHM COMPLETED SUCCESSFULLY!");
-            updateGraphExplanation("✅ Minimum Spanning Tree constructed!");
+            updateGraphExplanation("PRIM'S ALGORITHM COMPLETED SUCCESSFULLY!");
+            updateGraphExplanation("Minimum Spanning Tree constructed!");
             updateGraphExplanation("");
-            updateGraphExplanation("📊 FINAL MST STATISTICS:");
-            updateGraphExplanation("   🔢 Total nodes: " + graphNodes.size());
-            updateGraphExplanation("   🔗 MST edges: " + finalMSTSize);
-            updateGraphExplanation("   💰 Total MST cost: " + String.format("%.1f", finalTotalCostFinal));
+            updateGraphExplanation("FINAL MST STATISTICS:");
+            updateGraphExplanation("   Total nodes: " + graphNodes.size());
+            updateGraphExplanation("   MST edges: " + finalMSTSize);
+            updateGraphExplanation("   Total MST cost: " + String.format("%.1f", finalTotalCostFinal));
             updateGraphExplanation("");
-            updateGraphExplanation("🌳 MST EDGES SELECTED:");
+            updateGraphExplanation("MST EDGES SELECTED:");
             int edgeNum = 1;
             for(EdgeRecord mstEdge : finalMSTEdges) {
                 updateGraphExplanation("   " + edgeNum + ". " + mstEdge.a + "↔" + mstEdge.b + " (weight: " + String.format("%.1f", mstEdge.weight) + ")");
                 edgeNum++;
             }
             updateGraphExplanation("");
-            updateGraphExplanation("💡 PROPERTIES OF THIS MST:");
-            updateGraphExplanation("   ✓ Connects all " + graphNodes.size() + " nodes");
-            updateGraphExplanation("   ✓ Uses exactly " + (graphNodes.size()-1) + " edges");
-            updateGraphExplanation("   ✓ Has minimum possible total weight");
-            updateGraphExplanation("   ✓ Contains no cycles");
+            updateGraphExplanation("PROPERTIES OF THIS MST:");
+            updateGraphExplanation("   Connects all " + graphNodes.size() + " nodes");
+            updateGraphExplanation("   Uses exactly " + (graphNodes.size()-1) + " edges");
+            updateGraphExplanation("   Has minimum possible total weight");
+            updateGraphExplanation("   Contains no cycles");
             updateGraphExplanation("======================================");
         }));
         
+        // Store timeline for potential stopping and play
+        currentVisualizationTimeline = tl;
+        enablePauseButton();
         tl.play(); 
     }
     private void visualizeKruskal(){ 
         if(isDirected) {
-            showErrorInExplanation("🚨 KRUSKAL'S ALGORITHM ERROR!");
-            showErrorInExplanation("❌ This algorithm is NOT APPLICABLE for directed graphs!");
+            showErrorInExplanation("KRUSKAL'S ALGORITHM ERROR!");
+            showErrorInExplanation("This algorithm is NOT APPLICABLE for directed graphs!");
             showErrorInExplanation("");
-            showErrorInExplanation("📋 WHY THIS ERROR OCCURRED:");
+            showErrorInExplanation("WHY THIS ERROR OCCURRED:");
             showErrorInExplanation("   • Kruskal's algorithm finds Minimum Spanning Tree (MST)");
             showErrorInExplanation("   • MST concept only applies to undirected graphs");
             showErrorInExplanation("   • Directed graphs don't have traditional spanning trees");
             showErrorInExplanation("");
-            showErrorInExplanation("🔧 HOW TO FIX:");
+            showErrorInExplanation("HOW TO FIX:");
             showErrorInExplanation("   1. Disable 'Directed' option in graph settings");
             showErrorInExplanation("   2. Make sure graph is undirected");
             showErrorInExplanation("   3. Then try running Kruskal's algorithm again");
@@ -1955,14 +2221,13 @@ public class GraphManager {
         }
         
         clearGraphExplanation();
-        resetKruskalLabels(); // Clear any existing Kruskal labels
         
         // Algorithm is applicable - proceed with educational Kruskal's implementation
-        updateGraphExplanation("🌲 KRUSKAL'S MINIMUM SPANNING TREE ALGORITHM");
+        updateGraphExplanation("KRUSKAL'S MINIMUM SPANNING TREE ALGORITHM");
         updateGraphExplanation("======================================");
-        updateGraphExplanation("🎯 Goal: Find minimum weight tree connecting all nodes");
+        updateGraphExplanation("Goal: Find minimum weight tree connecting all nodes");
         updateGraphExplanation("");
-        updateGraphExplanation("💡 ALGORITHM CONCEPT:");
+        updateGraphExplanation("ALGORITHM CONCEPT:");
         updateGraphExplanation("   • Sort ALL edges by weight (ascending order)");
         updateGraphExplanation("   • Consider edges one by one from cheapest to most expensive");
         updateGraphExplanation("   • Add edge to MST if it doesn't create a cycle");
@@ -2014,24 +2279,6 @@ public class GraphManager {
         int step = 0;
         double totalCost = 0.0;
         
-        // Create distance labels for nodes showing their MST connection cost (same style as updated Kruskal's)
-        for(String nodeId : graphNodes.keySet()) {
-            GraphNode node = graphNodes.get(nodeId);
-            Label distanceLabel = new Label("∞");
-            distanceLabel.setStyle(
-                "-fx-background-color: #90EE90; -fx-text-fill: black; -fx-font-weight: bold; " +
-                "-fx-font-size: 13px; -fx-background-radius: 8px; -fx-padding: 3px 6px;"
-            );
-            
-            // Position labels above nodes (same as Bellman-Ford and updated Prim's)
-            distanceLabel.layoutXProperty().bind(node.getCircle().centerXProperty().subtract(distanceLabel.widthProperty().divide(2)));
-            distanceLabel.layoutYProperty().bind(node.getCircle().centerYProperty().subtract(60));
-            distanceLabel.setMouseTransparent(true);
-            
-            kruskalLabels.put(nodeId, distanceLabel);
-            graphCanvas.getChildren().add(distanceLabel);
-        }
-        
         // Create total cost label for smooth animation
         Label totalCostLabel = new Label("MST Cost: 0.0");
         totalCostLabel.setStyle(
@@ -2047,7 +2294,7 @@ public class GraphManager {
         
         // Step 1: Show sorted edges with more animation
         tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
-            updateGraphExplanation("📊 STEP 1: SORT ALL EDGES BY WEIGHT");
+            updateGraphExplanation("STEP 1: SORT ALL EDGES BY WEIGHT");
             updateGraphExplanation("   📋 Kruskal's algorithm processes edges in weight order");
             updateGraphExplanation("");
         }));
@@ -2056,24 +2303,24 @@ public class GraphManager {
         for(int i = 0; i < sortedEdges.size(); i++) {
             final EdgeRecord edge = sortedEdges.get(i);
             final int edgeNum = i + 1;
-            tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*200)), e-> {
+            tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
                 edge.line.setStroke(Color.web("#FFD700")); // Gold color for sorted list
                 edge.line.setStrokeWidth(3);
                 updateGraphExplanation("   " + edgeNum + ". " + edge.a + "↔" + edge.b + " (weight: " + String.format("%.1f", edge.weight) + ")");
             }));
             
             // Reset color after showing
-            tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*150)), e-> {
+            tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
                 edge.line.setStroke(Color.WHITE);
                 edge.line.setStrokeWidth(2);
             }));
         }
         
-        tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*400)), e-> {
+        tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
             updateGraphExplanation("");
             updateGraphExplanation("🔄 STEP 2: PROCESS EDGES ONE BY ONE");
-            updateGraphExplanation("   💡 Each node starts disconnected (distance = ∞)");
-            updateGraphExplanation("   🎯 Goal: Connect all nodes with minimum total cost");
+            updateGraphExplanation("   Each node starts disconnected (distance = ∞)");
+            updateGraphExplanation("   Goal: Connect all nodes with minimum total cost");
             updateGraphExplanation("");
         }));
         
@@ -2088,7 +2335,7 @@ public class GraphManager {
                 currentEdge.line.setStroke(Color.web("#FF6B6B")); // Bright red for consideration
                 currentEdge.line.setStrokeWidth(4);
                 currentEdge.line.getStrokeDashArray().setAll(5.0, 5.0); // Dashed line for emphasis
-                updateGraphExplanation("🔍 EXAMINING EDGE " + finalEdgeNumber + "/" + totalEdges + ": " + 
+                updateGraphExplanation("EXAMINING EDGE " + finalEdgeNumber + "/" + totalEdges + ": " + 
                                       currentEdge.a + "↔" + currentEdge.b + " (weight: " + String.format("%.1f", currentEdge.weight) + ")");
                 updateGraphExplanation("   ❓ Checking if nodes are in different components...");
             }));
@@ -2110,36 +2357,6 @@ public class GraphManager {
                     currentEdge.line.setStrokeWidth(5);
                     currentEdge.line.getStrokeDashArray().clear(); // Remove dashes
                     
-                    // Update distance labels for connected nodes with bright flash animation
-                    Label labelA = kruskalLabels.get(currentEdge.a);
-                    Label labelB = kruskalLabels.get(currentEdge.b);
-                    
-                    if(labelA != null) {
-                        labelA.setText(String.format("%.1f", currentEdge.weight));
-                        // Bright green flash animation
-                        labelA.setStyle("-fx-background-color: #00FF00; -fx-text-fill: black; -fx-font-weight: bold; -fx-font-size: 13px; -fx-background-radius: 8px; -fx-padding: 3px 6px;");
-                        
-                        // Animate back to light green after flash
-                        Timeline flashTimeline = new Timeline();
-                        flashTimeline.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(400), ev -> {
-                            labelA.setStyle("-fx-background-color: #90EE90; -fx-text-fill: black; -fx-font-weight: bold; -fx-font-size: 13px; -fx-background-radius: 8px; -fx-padding: 3px 6px;");
-                        }));
-                        flashTimeline.play();
-                    }
-                    
-                    if(labelB != null) {
-                        labelB.setText(String.format("%.1f", currentEdge.weight));
-                        // Bright green flash animation
-                        labelB.setStyle("-fx-background-color: #00FF00; -fx-text-fill: black; -fx-font-weight: bold; -fx-font-size: 13px; -fx-background-radius: 8px; -fx-padding: 3px 6px;");
-                        
-                        // Animate back to light green after flash
-                        Timeline flashTimeline = new Timeline();
-                        flashTimeline.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(400), ev -> {
-                            labelB.setStyle("-fx-background-color: #90EE90; -fx-text-fill: black; -fx-font-weight: bold; -fx-font-size: 13px; -fx-background-radius: 8px; -fx-padding: 3px 6px;");
-                        }));
-                        flashTimeline.play();
-                    }
-                    
                     // Smooth total cost animation
                     Timeline costAnimation = new Timeline();
                     double startCost = currentTotalCost - currentEdge.weight;
@@ -2152,10 +2369,10 @@ public class GraphManager {
                     }
                     costAnimation.play();
                     
-                    updateGraphExplanation("✅ EDGE ACCEPTED! " + currentEdge.a + "↔" + currentEdge.b + " (weight: " + String.format("%.1f", currentEdge.weight) + ")");
-                    updateGraphExplanation("   🎯 Nodes " + currentEdge.a + " and " + currentEdge.b + " are now connected in MST");
-                    updateGraphExplanation("   💰 Edge cost: " + String.format("%.1f", currentEdge.weight));
-                    updateGraphExplanation("   💰 Total MST cost so far: " + String.format("%.1f", currentTotalCost));
+                    updateGraphExplanation("EDGE ACCEPTED! " + currentEdge.a + "↔" + currentEdge.b + " (weight: " + String.format("%.1f", currentEdge.weight) + ")");
+                    updateGraphExplanation("   Nodes " + currentEdge.a + " and " + currentEdge.b + " are now connected in MST");
+                    updateGraphExplanation("   Edge cost: " + String.format("%.1f", currentEdge.weight));
+                    updateGraphExplanation("   Total MST cost so far: " + String.format("%.1f", currentTotalCost));
                     updateGraphExplanation("   📊 MST edges: " + finalMSTSize + "/" + (graphNodes.size()-1));
                 }));
                 
@@ -2163,10 +2380,10 @@ public class GraphManager {
                 union.accept(currentEdge.a, currentEdge.b);
                 
                 // Add completion check
-                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*400)), e-> {
+                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
                     if(finalMSTSize == graphNodes.size() - 1) {
                         updateGraphExplanation("");
-                        updateGraphExplanation("🎉 MST COMPLETE!");
+                        updateGraphExplanation("MST COMPLETE!");
                         updateGraphExplanation("   💎 Final minimum spanning tree cost: " + String.format("%.1f", currentTotalCost));
                         updateGraphExplanation("   🔗 All " + graphNodes.size() + " nodes are now connected!");
                         updateGraphExplanation("   ✨ Used " + finalMSTSize + " edges to connect the graph");
@@ -2190,7 +2407,7 @@ public class GraphManager {
                 }));
                 
                 // Fade out rejected edge
-                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*400)), e-> {
+                tl.getKeyFrames().add(new KeyFrame(javafx.util.Duration.millis(getAnimationDelay(step++*600)), e-> {
                     currentEdge.line.setOpacity(0.3);
                     currentEdge.line.setStroke(Color.GRAY);
                     currentEdge.line.setStrokeWidth(1);
@@ -2221,46 +2438,35 @@ public class GraphManager {
                 }
             }
             
-            updateGraphExplanation("🧹 CLEANUP: Removed " + (edges.size() - finalMSTSize) + " edges not in MST");
+            updateGraphExplanation("CLEANUP: Removed " + (edges.size() - finalMSTSize) + " edges not in MST");
             updateGraphExplanation("======================================");
-            updateGraphExplanation("🎉 KRUSKAL'S ALGORITHM COMPLETED SUCCESSFULLY!");
-            updateGraphExplanation("✅ Minimum Spanning Tree constructed using Union-Find!");
+            updateGraphExplanation("KRUSKAL'S ALGORITHM COMPLETED SUCCESSFULLY!");
+            updateGraphExplanation("Minimum Spanning Tree constructed using Union-Find!");
             updateGraphExplanation("");
-            updateGraphExplanation("📊 FINAL MST STATISTICS:");
-            updateGraphExplanation("   🔢 Total nodes: " + graphNodes.size());
-            updateGraphExplanation("   🔗 MST edges: " + finalMSTSize);
-            updateGraphExplanation("   💰 Total MST cost: " + String.format("%.1f", finalTotalCost));
+            updateGraphExplanation("FINAL MST STATISTICS:");
+            updateGraphExplanation("   Total nodes: " + graphNodes.size());
+            updateGraphExplanation("   MST edges: " + finalMSTSize);
+            updateGraphExplanation("   Total MST cost: " + String.format("%.1f", finalTotalCost));
             updateGraphExplanation("");
-            updateGraphExplanation("🌳 MST EDGES SELECTED (in order processed):");
+            updateGraphExplanation("MST EDGES SELECTED (in order processed):");
             int edgeNum = 1;
             for(EdgeRecord mstEdge : finalMSTEdges) {
                 updateGraphExplanation("   " + edgeNum + ". " + mstEdge.a + "↔" + mstEdge.b + " (weight: " + String.format("%.1f", mstEdge.weight) + ")");
                 edgeNum++;
             }
             updateGraphExplanation("");
-            updateGraphExplanation("💡 KRUSKAL vs PRIM COMPARISON:");
-            updateGraphExplanation("   🔄 Kruskal: Processes edges globally by weight");
-            updateGraphExplanation("   🎯 Prim: Grows tree locally from a starting node");
-            updateGraphExplanation("   ⚖️ Both find the same MST (but in different ways)");
-            updateGraphExplanation("   🚀 Kruskal better for sparse graphs, Prim for dense");
+            updateGraphExplanation("KRUSKAL vs PRIM COMPARISON:");
+            updateGraphExplanation("   Kruskal: Processes edges globally by weight");
+            updateGraphExplanation("   Prim: Grows tree locally from a starting node");
+            updateGraphExplanation("   Both find the same MST (but in different ways)");
+            updateGraphExplanation("   Kruskal better for sparse graphs, Prim for dense");
             updateGraphExplanation("======================================");
         }));
         
+        // Store timeline for potential stopping and play
+        currentVisualizationTimeline = tl;
+        enablePauseButton();
         tl.play(); 
-    }
-    
-    private void resetPrimLabels(){
-        if(graphCanvas!=null){
-            for(Label t: primCostLabels.values()) graphCanvas.getChildren().remove(t);
-        }
-        primCostLabels.clear();
-    }
-    
-    private void resetKruskalLabels(){
-        if(graphCanvas!=null){
-            for(Label t: kruskalLabels.values()) graphCanvas.getChildren().remove(t);
-        }
-        kruskalLabels.clear();
     }
     
     private void checkConfigurationComplete() {
@@ -2649,10 +2855,41 @@ public class GraphManager {
         outsideWeightClickHandler = null;
     }
     
+    private boolean hasNegativeWeights() {
+        for (EdgeRecord edge : edges) {
+            if (edge.weight < 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
     private void enableAlgorithmCheckboxesIfReady() {
         if (graphAlgoChecks != null && !graphNodes.isEmpty() && !edges.isEmpty() && !graphAlgoSelectionLocked) {
-            graphAlgoChecks.values().forEach(cb -> cb.setDisable(false));
-            common.sortingStatusLabel.setText("Graph ready! Select algorithms to continue.");
+            boolean hasNegativeEdges = hasNegativeWeights();
+            
+            // Enable all algorithms except handle Dijkstra specially
+            graphAlgoChecks.values().forEach(cb -> {
+                if (cb.getText().equals("Dijkstra") && hasNegativeEdges) {
+                    cb.setDisable(true);
+                    cb.setSelected(false); // Uncheck if it was selected
+                    cb.setStyle("-fx-text-fill:#888888;-fx-font-size:11px;"); // Grayed out style
+                    // Add tooltip to explain why it's disabled
+                    Tooltip tooltip = new Tooltip("Dijkstra's algorithm cannot handle negative edge weights.\nUse Bellman-Ford algorithm instead.");
+                    tooltip.setStyle("-fx-background-color: #2b2b2b; -fx-text-fill: #ffffff; -fx-font-size: 11px;");
+                    cb.setTooltip(tooltip);
+                } else {
+                    cb.setDisable(false);
+                    cb.setStyle("-fx-text-fill:#e0e0e0;-fx-font-size:11px;"); // Normal style
+                    cb.setTooltip(null); // Remove tooltip
+                }
+            });
+            
+            if (hasNegativeEdges) {
+                common.sortingStatusLabel.setText("Graph ready! Note: Dijkstra disabled due to negative weights.");
+            } else {
+                common.sortingStatusLabel.setText("Graph ready! Select algorithms to continue.");
+            }
         }
     }
     
@@ -2944,6 +3181,9 @@ public class GraphManager {
     }
     
     private void resetGraphUIState() {
+        // Stop any running visualization immediately
+        stopCurrentVisualization();
+        
         animationSpeed = 1.0;
         if (graphSpeedSlider != null) graphSpeedSlider.setValue(1.0);
         clearGraphExplanation();
