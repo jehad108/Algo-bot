@@ -44,6 +44,17 @@ public class NetworkManager {
     private Node netCurrentOverlay = null; 
     private EventHandler<MouseEvent> netOutsideHandler = null;
     
+    // Animation speed control
+    private double networkAnimationSpeed = 1.0; // Speed multiplier for network animations
+    private Slider networkSpeedSlider;
+    
+    // Visualization state tracking
+    private Timeline currentNetworkVisualization = null;
+    private SequentialTransition currentNetworkSequence = null;
+    private Map<String, Double> originalCapacities = new HashMap<>(); // Store original edge capacities
+    private Button netResetVisualizationBtnRef;
+    private List<Node> currentTempOverlays = new ArrayList<>(); // Track current temporary overlays
+    
     
     private static class EdgeRecord { 
         // Core edge data
@@ -64,6 +75,8 @@ public class NetworkManager {
         Label residualBackLabel;   // small label showing residual (flow) on back edge
         // Water flow animation state
         Timeline waterDashAnim;
+        // Bidirectional edge offset
+        double bidirectionalOffset = 0.0;
         EdgeRecord(Line l, String a, String b, double w, Label wl, Polygon ah) {
             this.line = l; 
             this.a = a; 
@@ -78,6 +91,7 @@ public class NetworkManager {
             this.flow = 0.0;
             this.residualBackLine = null;
             this.residualBackLabel = null;
+            this.bidirectionalOffset = 0.0;
         } 
     }
     
@@ -136,9 +150,11 @@ public class NetworkManager {
         row3.setAlignment(Pos.CENTER_RIGHT);
         netSetSourceBtnRef = ButtonManager.createCompactButton("SET SOURCE", "#00ffff");
         netSetSinkBtnRef = ButtonManager.createCompactButton("SET SINK", "#00ffff");
+        netResetVisualizationBtnRef = ButtonManager.createCompactButton("RESET VISUALIZATION", "#00ffff");
         netRunBtnRef = ButtonManager.createCompactButton("RUN (EDMONDS–KARP)", "#00ffff");
         ButtonManager.setCompactButtonDisabled(netSetSourceBtnRef);
         ButtonManager.setCompactButtonDisabled(netSetSinkBtnRef);
+        netResetVisualizationBtnRef.setDisable(true); // Initially disabled
         netRunBtnRef.setDisable(true);
         netSetSourceBtnRef.setOnAction(e -> {
             // Smooth click feedback
@@ -156,27 +172,55 @@ public class NetworkManager {
             if (netAddNodeArmed) toggleNetAddNodeMode();
             netSelectingSink = true; netSelectingSource = false; networkStatusLabel.setText("Click a node to set SINK");
         });
+        netResetVisualizationBtnRef.setOnAction(e -> resetNetworkVisualization());
         netRunBtnRef.setOnAction(e -> runEdmondsKarp());
-        row3.getChildren().addAll(netSetSourceBtnRef, netSetSinkBtnRef, netRunBtnRef);
+        row3.getChildren().addAll(netSetSourceBtnRef, netSetSinkBtnRef, netResetVisualizationBtnRef, netRunBtnRef);
 
         buttonPanel.getChildren().addAll(row1, row2, row3);
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
         titleContainer.getChildren().addAll(spacer, buttonPanel);
 
-        // Config summary (fixed Directed + Weighted)
+        // Config summary (fixed Directed + Weighted) + Speed Control
         HBox configPanel = new HBox(18);
         configPanel.setAlignment(Pos.CENTER_LEFT);
         configPanel.setPadding(new Insets(6, 12, 6, 12));
         configPanel.setStyle("-fx-background-color: rgba(10,15,22,0.65); -fx-background-radius:10; -fx-border-radius:10; -fx-border-color:#00ffff44; -fx-border-width:1;");
+        
         Label cfg = new Label("Graph: Directed • Weighted (capacities)");
         cfg.setTextFill(Color.web("#e0ffff"));
         cfg.setFont(Font.font("SF Pro Text", 12));
+        
+        // Network animation speed control
+        HBox speedBox = new HBox(10);
+        speedBox.setAlignment(Pos.CENTER);
+        Label speedLabelLeft = new Label("Speed:");
+        speedLabelLeft.setStyle("-fx-text-fill: white; -fx-font-size: 11px;");
+        
+        networkSpeedSlider = new javafx.scene.control.Slider(0.5, 3.0, 1.0);
+        networkSpeedSlider.setShowTickLabels(false);
+        networkSpeedSlider.setShowTickMarks(false);
+        networkSpeedSlider.setPrefWidth(120);
+        networkSpeedSlider.setStyle("-fx-control-inner-background: rgba(255,255,255,0.1);");
+        
+        Label speedValueLabel = new Label("1.0x");
+        speedValueLabel.setStyle("-fx-text-fill: #00ffff; -fx-font-weight: bold; -fx-font-size: 11px;");
+        speedValueLabel.setPrefWidth(35);
+        
+        // Update speed value and store in instance variable
+        networkSpeedSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
+            double speed = newVal.doubleValue();
+            speedValueLabel.setText(String.format("%.1fx", speed));
+            networkAnimationSpeed = speed;
+        });
+        
+        speedBox.getChildren().addAll(speedLabelLeft, networkSpeedSlider, speedValueLabel);
+        
         networkStatusLabel = new Label("Add nodes and edges with capacities.");
         networkStatusLabel.setTextFill(Color.web("#cccccc"));
         networkStatusLabel.setFont(Font.font("SF Pro Text", 12));
         Region cfgSpacer = new Region(); HBox.setHgrow(cfgSpacer, Priority.ALWAYS);
-        configPanel.getChildren().addAll(cfg, cfgSpacer, networkStatusLabel);
+        configPanel.getChildren().addAll(cfg, speedBox, cfgSpacer, networkStatusLabel);
 
         // Main split: canvas + explanation
         HBox mainSplit = new HBox(18);
@@ -636,16 +680,15 @@ public class NetworkManager {
         water.getStrokeDashArray().setAll(18.0, 12.0);
         water.setStrokeLineCap(StrokeLineCap.ROUND);
 
-        Runnable pos = () -> {
-            double c1X=c1.getCenterX(), c1Y=c1.getCenterY(), c2X=c2.getCenterX(), c2Y=c2.getCenterY();
-            double dx=c2X-c1X, dy=c2Y-c1Y; double dist=Math.sqrt(dx*dx+dy*dy);
-            if(dist>0){ dx/=dist; dy/=dist; double sx=c1X+dx*NODE_RADIUS, sy=c1Y+dy*NODE_RADIUS, ex=c2X-dx*NODE_RADIUS, ey=c2Y-dy*NODE_RADIUS;
-                base.setStartX(sx); base.setStartY(sy); base.setEndX(ex); base.setEndY(ey);
-                inner.setStartX(sx); inner.setStartY(sy); inner.setEndX(ex); inner.setEndY(ey);
-                water.setStartX(sx); water.setStartY(sy); water.setEndX(ex); water.setEndY(ey);
-            }
-        };
+        // Check if reverse edge exists for bidirectional offset
+        String reverseKey = b + "->" + a;
+        boolean hasReverseEdge = netEdgeKeys.contains(reverseKey);
+        final double offset = hasReverseEdge ? 15.0 : 0.0; // Apply offset for bidirectional edges
+
+        // Create positioning runnable that handles bidirectional offset
+        Runnable pos = () -> netPositionEdgeWithOffset(c1, c2, base, inner, water, offset);
         c1.centerXProperty().addListener((o,ov,nv)->pos.run()); c1.centerYProperty().addListener((o,ov,nv)->pos.run());
+        c2.centerXProperty().addListener((o,ov,nv)->pos.run()); c2.centerYProperty().addListener((o,ov,nv)->pos.run()); pos.run();
         c2.centerXProperty().addListener((o,ov,nv)->pos.run()); c2.centerYProperty().addListener((o,ov,nv)->pos.run()); pos.run();
         // Insert in order: base at bottom, then inner, then water
         networkCanvas.getChildren().add(0, base);
@@ -677,12 +720,83 @@ public class NetworkManager {
         // Create record and connect layered lines
         EdgeRecord er = new EdgeRecord(inner, a, b, cap, capLabel, arrow);
         er.pipeBaseLine = base; er.pipeInnerLine = inner; er.waterLine = water; er.line = inner;
+        er.bidirectionalOffset = offset; // Store the offset for this edge
 	    netEdges.add(er); netEdgeKeys.add(key);
+	    
+	    // Store original capacity for reset functionality
+	    originalCapacities.put(key, cap);
+	    
+	    // If we have a reverse edge, update it to use the opposite offset
+	    if (hasReverseEdge) {
+	        netUpdateExistingEdgeForBidirectional(b, a, -offset);
+	        // Also refresh all positioning to ensure consistency
+	        netRefreshAllEdgePositions();
+	    }
+	    
 	    // Prepare residual back-edge overlay (hidden initially)
 	    netEnsureBackOverlay(er);
 	    netSetBackOverlayVisible(er, false);
         updateNetworkWorkflowButtons();
     }
+	
+	private void netPositionEdgeWithOffset(Circle c1, Circle c2, Line base, Line inner, Line water, double offsetValue) {
+	    double c1X=c1.getCenterX(), c1Y=c1.getCenterY(), c2X=c2.getCenterX(), c2Y=c2.getCenterY();
+	    double dx=c2X-c1X, dy=c2Y-c1Y; double dist=Math.sqrt(dx*dx+dy*dy);
+	    if(dist>0){ 
+	        dx/=dist; dy/=dist; 
+	        // Calculate perpendicular offset for bidirectional edges
+	        double perpX = -dy * offsetValue; // Perpendicular to the line direction
+	        double perpY = dx * offsetValue;
+	        double sx=c1X+dx*NODE_RADIUS+perpX, sy=c1Y+dy*NODE_RADIUS+perpY;
+	        double ex=c2X-dx*NODE_RADIUS+perpX, ey=c2Y-dy*NODE_RADIUS+perpY;
+	        if (base != null) { base.setStartX(sx); base.setStartY(sy); base.setEndX(ex); base.setEndY(ey); }
+	        if (inner != null) { inner.setStartX(sx); inner.setStartY(sy); inner.setEndX(ex); inner.setEndY(ey); }
+	        if (water != null) { water.setStartX(sx); water.setStartY(sy); water.setEndX(ex); water.setEndY(ey); }
+	    }
+	}
+	
+	// Dynamic positioning that checks for bidirectional edges automatically
+	private void netPositionEdgeAutoBidirectional(String edgeA, String edgeB, Circle c1, Circle c2, Line base, Line inner, Line water) {
+	    // Determine offset based on whether reverse edge exists
+	    String reverseKey = edgeB + "->" + edgeA;
+	    boolean hasReverseEdge = netEdgeKeys.contains(reverseKey);
+	    double offset = hasReverseEdge ? 15.0 : 0.0;
+	    
+	    netPositionEdgeWithOffset(c1, c2, base, inner, water, offset);
+	}
+	
+	private void netRefreshAllEdgePositions() {
+	    // Refresh positioning for all edges to handle bidirectional states
+	    for (EdgeRecord edge : netEdges) {
+	        Circle c1 = netNodeCircles.get(edge.a);
+	        Circle c2 = netNodeCircles.get(edge.b);
+	        if (c1 == null || c2 == null) continue;
+	        
+	        // Check if this edge has a reverse counterpart
+	        String reverseKey = edge.b + "->" + edge.a;
+	        boolean hasReverseEdge = netEdgeKeys.contains(reverseKey);
+	        double offset = hasReverseEdge ? 15.0 : 0.0;
+	        
+	        // Apply immediate positioning update
+	        netPositionEdgeWithOffset(c1, c2, edge.pipeBaseLine, edge.pipeInnerLine, edge.waterLine, offset);
+	    }
+	}
+	
+	private void netUpdateExistingEdgeForBidirectional(String a, String b, double newOffset) {
+	    EdgeRecord existingEdge = netFindEdge(a, b);
+	    if (existingEdge == null) return;
+	    
+	    Circle c1 = netNodeCircles.get(a);
+	    Circle c2 = netNodeCircles.get(b);
+	    if (c1 == null || c2 == null) return;
+	    
+	    // Update the stored offset
+	    existingEdge.bidirectionalOffset = newOffset;
+	    
+	    // Apply the new positioning immediately (no need to manage listeners since they'll use the updated offset)
+	    netPositionEdgeWithOffset(c1, c2, existingEdge.pipeBaseLine, existingEdge.pipeInnerLine, existingEdge.waterLine, newOffset);
+	}
+	
 	
 	private void netEnsureBackOverlay(EdgeRecord er){
         if(er==null || er.residualBackLine!=null) return;
@@ -800,6 +914,9 @@ public class NetworkManager {
         
 	    // Clear previous min-cut overlays if any
 	    clearMinCutOverlays();
+	    
+	    // Enable reset visualization button
+	    netResetVisualizationBtnRef.setDisable(false);
 	    
         // Build index map
         List<String> ids = new ArrayList<>(netNodes.keySet()); Collections.sort(ids, Comparator.comparingInt(Integer::parseInt));
@@ -959,7 +1076,7 @@ public class NetworkManager {
                 // Optional subtle pulse-in
                 Timeline tl = new Timeline(
                     new KeyFrame(Duration.ZERO, new KeyValue(ol.opacityProperty(), 0.0)),
-                    new KeyFrame(Duration.millis(400), new KeyValue(ol.opacityProperty(), 0.95))
+                    new KeyFrame(Duration.millis(getNetworkAnimationDelay(400)), new KeyValue(ol.opacityProperty(), 0.95))
                 );
                 tl.play();
 
@@ -978,12 +1095,15 @@ public class NetworkManager {
     private void animateAugmentPathAndApply(List<Seg> segs, double aug, NetFlowRun run, Runnable onDone) {
         // Build blue overlay arrows on each segment of the path.
         // This makes the active augmenting path obvious to the user without extra dots/labels.
-        List<Node> tempOverlays = new ArrayList<>();
+        
+        // Clear any existing temp overlays and use class-level tracking
+        currentTempOverlays.clear();
+        
         // Track edges whose water animation we enable for this augmentation
         List<EdgeRecord> waterEdges = new ArrayList<>();
         List<Boolean> waterReverse = new ArrayList<>();
 
-        Color pathBlue = Color.web("#3f7cff");
+        Color pathBlue = Color.web("#1a4088"); // Darker blue for better visibility
         double lineW = 7.0; // thicker base
 
         // Helper to create an arrowhead polygon oriented from (x1,y1) -> (x2,y2)
@@ -1045,8 +1165,8 @@ public class NetworkManager {
             arrow.setEffect(new DropShadow(10, pathBlue));
 
             networkCanvas.getChildren().addAll(overlay, arrow);
-            tempOverlays.add(overlay);
-            tempOverlays.add(arrow);
+            currentTempOverlays.add(overlay);
+            currentTempOverlays.add(arrow);
         }
 
         // Keep original edge capacity labels on top of overlays
@@ -1058,20 +1178,23 @@ public class NetworkManager {
 
         // Animate overlays: slower fade in for clarity and make them even thicker when selected
         Timeline fadeIn = new Timeline();
-        Duration fadeInDur = Duration.millis(900);
-        for (Node n : tempOverlays) {
+        Duration fadeInDur = Duration.millis(getNetworkAnimationDelay(900));
+        for (Node n : currentTempOverlays) {
             fadeIn.getKeyFrames().add(new KeyFrame(fadeInDur, new KeyValue(n.opacityProperty(), 0.95)));
         }
         // Animate line thickness bump
-        for (Node n : tempOverlays) {
+        for (Node n : currentTempOverlays) {
             if (n instanceof Line ln) {
                 fadeIn.getKeyFrames().add(new KeyFrame(fadeInDur, new KeyValue(ln.strokeWidthProperty(), lineW + 3.0)));
             }
         }
 
         // Full sequence: fade in overlays, hold longer so the path is very clear
-        PauseTransition hold = new PauseTransition(Duration.millis(1400));
+        PauseTransition hold = new PauseTransition(Duration.millis(getNetworkAnimationDelay(1400)));
         SequentialTransition seq = new SequentialTransition(fadeIn, hold);
+        
+        // Track current animation sequence for reset functionality
+        currentNetworkSequence = seq;
 
         // Start water animation on involved edges immediately
         for (int i = 0; i < waterEdges.size(); i++) {
@@ -1096,8 +1219,8 @@ public class NetworkManager {
 
             // Fade out overlays then cleanup and continue
             Timeline fadeOut = new Timeline();
-            Duration fadeOutDur = Duration.millis(800);
-            for (Node n : tempOverlays) {
+            Duration fadeOutDur = Duration.millis(getNetworkAnimationDelay(800));
+            for (Node n : currentTempOverlays) {
                 fadeOut.getKeyFrames().add(new KeyFrame(fadeOutDur, new KeyValue(n.opacityProperty(), 0.0)));
             }
             fadeOut.setOnFinished(x -> {
@@ -1105,8 +1228,8 @@ public class NetworkManager {
                 for (EdgeRecord er : waterEdges) {
                     netStopWaterAnim(er, true);
                 }
-                networkCanvas.getChildren().removeAll(tempOverlays);
-                PauseTransition pause = new PauseTransition(Duration.millis(280));
+                networkCanvas.getChildren().removeAll(currentTempOverlays);
+                PauseTransition pause = new PauseTransition(Duration.millis(getNetworkAnimationDelay(280)));
                 pause.setOnFinished(e2 -> onDone.run());
                 pause.play();
             });
@@ -1138,5 +1261,78 @@ public class NetworkManager {
             e.waterDashAnim.setCycleCount(Animation.INDEFINITE);
             e.waterDashAnim.play();
         } catch (Exception ignored) {}
+    }
+    
+    // Animation speed control helper method
+    private int getNetworkAnimationDelay(int baseDelay) {
+        return (int) (baseDelay / networkAnimationSpeed);
+    }
+    
+    // Reset network visualization to initial state
+    private void resetNetworkVisualization() {
+        // Stop any running animations
+        if (currentNetworkSequence != null) {
+            currentNetworkSequence.stop();
+            currentNetworkSequence = null;
+        }
+        if (currentNetworkVisualization != null) {
+            currentNetworkVisualization.stop();
+            currentNetworkVisualization = null;
+        }
+        
+        // Stop all water animations
+        for (EdgeRecord er : netEdges) {
+            netStopWaterAnim(er, false);
+        }
+        
+        // Clear min-cut overlays
+        clearMinCutOverlays();
+        
+        // Remove any temporary path overlays from canvas
+        if (networkCanvas != null && !currentTempOverlays.isEmpty()) {
+            networkCanvas.getChildren().removeAll(currentTempOverlays);
+            currentTempOverlays.clear();
+        }
+        
+        // Reset all edge capacities to original values
+        for (EdgeRecord er : netEdges) {
+            String key = er.a + "->" + er.b;
+            Double originalCap = originalCapacities.get(key);
+            if (originalCap != null && er.weightLabel != null) {
+                er.flow = 0.0; // Reset flow
+                er.weightLabel.setText(common.fmt(originalCap) + "/" + common.fmt(originalCap));
+            }
+        }
+        
+        // Hide all residual back-edge overlays
+        for (EdgeRecord er : netEdges) {
+            netSetBackOverlayVisible(er, false);
+        }
+        
+        // Reset source and sink selections
+        if (flowSource != null) {
+            unhighlightNetNode(flowSource.getCircle());
+            flowSource = null;
+        }
+        if (flowSink != null) {
+            unhighlightNetNode(flowSink.getCircle());
+            flowSink = null;
+        }
+        
+        // Update button states after clearing source/sink
+        updateNetworkWorkflowButtons();
+        
+        // Clear explanation text
+        if (networkExplanationArea != null) {
+            networkExplanationArea.clear();
+        }
+        
+        // Update status
+        if (networkStatusLabel != null) {
+            networkStatusLabel.setText("Network reset. Set source and sink to run algorithm again.");
+        }
+        
+        // Disable reset button until next run
+        netResetVisualizationBtnRef.setDisable(true);
     }
 }
