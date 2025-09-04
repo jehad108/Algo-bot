@@ -715,7 +715,7 @@ public class NetworkManager {
         Runnable updateLabel = ()->{ double midX=(inner.getStartX()+inner.getEndX())/2.0, midY=(inner.getStartY()+inner.getEndY())/2.0; capLabel.setLayoutX(midX-20); capLabel.setLayoutY(midY-10); };
         inner.startXProperty().addListener((o,ov,nv)->updateLabel.run()); inner.startYProperty().addListener((o,ov,nv)->updateLabel.run());
         inner.endXProperty().addListener((o,ov,nv)->updateLabel.run()); inner.endYProperty().addListener((o,ov,nv)->updateLabel.run()); updateLabel.run();
-        Polygon arrow = new Polygon(); arrow.setFill(Color.web("#6fd6ff")); arrow.setStroke(Color.web("#6fd6ff")); Runnable updArr=()->{ double sx=inner.getStartX(), sy=inner.getStartY(), ex=inner.getEndX(), ey=inner.getEndY(); double dx=ex-sx, dy=ey-sy, len=Math.sqrt(dx*dx+dy*dy); if(len>0){ dx/=len; dy/=len; double ax=ex, ay=ey, size=12; double px=-dy*size*0.5, py=dx*size*0.5; arrow.getPoints().setAll(ax,ay, ax-dx*size+px, ay-dy*size+py, ax-dx*size-px, ay-dy*size-py);} };
+        Polygon arrow = new Polygon(); arrow.setFill(Color.web("#D9F00A")); arrow.setStroke(Color.web("#06774C")); Runnable updArr=()->{ double sx=inner.getStartX(), sy=inner.getStartY(), ex=inner.getEndX(), ey=inner.getEndY(); double dx=ex-sx, dy=ey-sy, len=Math.sqrt(dx*dx+dy*dy); if(len>0){ dx/=len; dy/=len; double ax=ex, ay=ey, size=12; double px=-dy*size, py=dx*size; arrow.getPoints().setAll(ax,ay, ax-dx*size+px, ay-dy*size+py, ax-dx*size-px, ay-dy*size-py);} };
         inner.startXProperty().addListener((o,ov,nv)->updArr.run()); inner.startYProperty().addListener((o,ov,nv)->updArr.run()); inner.endXProperty().addListener((o,ov,nv)->updArr.run()); inner.endYProperty().addListener((o,ov,nv)->updArr.run()); updArr.run(); networkCanvas.getChildren().add(arrow); capLabel.toFront();
         // Create record and connect layered lines
         EdgeRecord er = new EdgeRecord(inner, a, b, cap, capLabel, arrow);
@@ -1140,17 +1140,33 @@ public class NetworkManager {
                 waterEdges.add(er);
                 waterReverse.add(s.back);
             }
-            double x1 = cFrom.getCenterX(), y1 = cFrom.getCenterY();
-            double x2 = cTo.getCenterX(), y2 = cTo.getCenterY();
-            double dx = x2 - x1, dy = y2 - y1;
-            double dist = Math.hypot(dx, dy);
-            if (dist == 0) {
-                dist = 1;
+            
+            // Get the actual edge coordinates (with bidirectional offset applied)
+            EdgeRecord visualEdge = netFindEdge(from, to);
+            double startX, startY, endX, endY;
+            
+            if (visualEdge != null && visualEdge.pipeInnerLine != null) {
+                // Use the actual edge coordinates that include the bidirectional offset
+                startX = visualEdge.pipeInnerLine.getStartX();
+                startY = visualEdge.pipeInnerLine.getStartY();
+                endX = visualEdge.pipeInnerLine.getEndX();
+                endY = visualEdge.pipeInnerLine.getEndY();
+            } else {
+                // Fallback to node center calculation if edge not found
+                double x1 = cFrom.getCenterX(), y1 = cFrom.getCenterY();
+                double x2 = cTo.getCenterX(), y2 = cTo.getCenterY();
+                double dx = x2 - x1, dy = y2 - y1;
+                double dist = Math.hypot(dx, dy);
+                if (dist == 0) {
+                    dist = 1;
+                }
+                dx /= dist;
+                dy /= dist;
+                startX = x1 + dx * NODE_RADIUS;
+                startY = y1 + dy * NODE_RADIUS;
+                endX = x2 - dx * NODE_RADIUS;
+                endY = y2 - dy * NODE_RADIUS;
             }
-            dx /= dist;
-            dy /= dist;
-            double startX = x1 + dx * NODE_RADIUS, startY = y1 + dy * NODE_RADIUS;
-            double endX = x2 - dx * NODE_RADIUS, endY = y2 - dy * NODE_RADIUS;
 
             Line overlay = new Line(startX, startY, endX, endY);
             overlay.setStroke(pathBlue);
